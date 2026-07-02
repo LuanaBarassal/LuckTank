@@ -266,6 +266,48 @@ autenticado, com permissões por papel e um motor de alertas graduado
   km/L — bate com 490 km rodados / 60 L —, 0 alertas críticos).
 - ⬜ **Fase 8 — Integração LuckFrotas (mock) + hardening + deploy.**
 
+## Hardening pré-piloto (pós-auditoria, antes da Fase 8)
+
+Depois da Fase 7, foi feita uma auditoria geral do sistema (ver histórico da
+conversa). Os itens 🔴 críticos estão sendo corrigidos em blocos, um de cada
+vez, antes de avançar pra Fase 8.
+
+- ✅ **Bloco 1 — Git.** O projeto inteiro (Fases 1-7) estava sem nenhum
+  commit real (só o scaffold do `create-next-app`) e sem remoto — risco de
+  perda total. `.gitignore` conferido (`.env*.local`, `node_modules`, `.next`
+  já cobertos, nada precisou ser adicionado). Commit único criado
+  (`2f79f9f`) com todo o histórico das 7 fases, sem nenhum segredo (só
+  `.env.example` vazio entrou no stage). Repositório privado criado no
+  GitHub (`lucktank`) e push confirmado pelo usuário.
+- ✅ **Bloco 2 — Buraco de auditoria em `abastecimentos`.** As policies
+  `abastecimentos_update` (supervisor+) e `abastecimentos_delete`
+  (gerente+), criadas na 0001, liberavam UPDATE/DELETE direto pelo client
+  autenticado do escritório (anon key + sessão) — o mesmo client usado em
+  qualquer Client Component. Nenhuma tela/rota do app edita ou apaga
+  abastecimento (confirmado por busca no código: o único caminho de escrita
+  é o INSERT em `app/api/abastecimentos/route.ts`, via service role). Ou
+  seja, essas policies eram só superfície de fraude interna sem rastro — um
+  supervisor logado podia abrir o console do navegador e alterar/apagar um
+  abastecimento sem passar por `edicoes_log` (que só é escrito por código de
+  servidor, nunca por trigger de banco), quebrando o invariante #4 bem no
+  coração do produto anti-fraude. Migration `0006_abastecimentos_rls_hardening.sql`
+  removeu as duas policies (`abastecimentos_select` continua valendo,
+  isolada por empresa; não há e nunca houve policy de INSERT pra client
+  autenticado). **Validado contra o projeto real**: logado como
+  `supervisor.teste@lucktank.test` (papel `supervisor`) via anon key,
+  tentativas de `.update()` e `.delete()` num abastecimento real da empresa
+  retornaram 0 linhas afetadas (RLS filtra silenciosamente, sem erro
+  explícito — comportamento padrão do Postgres/PostgREST pra policy que
+  nega); conferido via service role que o registro (`litros: 250`,
+  `status: 'ativo'`) continuou idêntico depois das tentativas. **Se um dia
+  for necessário editar/excluir abastecimento pela UI**, isso deve entrar
+  como Server Action dedicada (mesmo padrão de `onibus/actions.ts` e
+  `motoristas/actions.ts`): validar papel via `getUsuarioAtual()` e chamar
+  `registrarLog()` antes de mutar — nunca reabrir a policy de RLS pra isso.
+- ⬜ Bloco 3 — rate limit + validação de arquivo nos endpoints públicos.
+- ⬜ Bloco 4 — limpar a porta de entrada (`/`, middleware, título).
+- ⬜ Bloco 5 — testes automatizados do motor de validação (Vitest).
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
@@ -287,7 +329,11 @@ autenticado, com permissões por papel e um motor de alertas graduado
    `lib/edicoes-log.ts`, usado em veículos/motoristas/usuários) e validado
    com dados reais. Todo novo módulo (abastecimentos na Fase 3+) segue o
    mesmo padrão: checar papel via `getUsuarioAtual()` antes de mutar, depois
-   chamar `registrarLog()`.
+   chamar `registrarLog()`. **`abastecimentos` não tem policy de
+   UPDATE/DELETE pra client autenticado desde a 0006** (hardening
+   pós-auditoria) — é somente leitura pro escritório; qualquer edição futura
+   precisa nascer como Server Action que segue esse mesmo padrão, nunca como
+   policy de RLS aberta.
 5. **O banco nunca é recriado.** O schema só evolui por novas migrations
    (`0002_*.sql`, `0003_*.sql`, ...) aplicadas em cima do que já existe.
    `0001_init.sql` não é mais editado — é histórico.
