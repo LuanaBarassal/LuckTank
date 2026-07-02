@@ -273,7 +273,11 @@ autenticado, com permissões por papel e um motor de alertas graduado
   veículo (motorista aparecendo certo tanto por nome livre quanto
   vinculado) e as estatísticas do motorista (1 abastecimento no mês, 8.17
   km/L — bate com 490 km rodados / 60 L —, 0 alertas críticos).
-- ⬜ **Fase 8 — Integração LuckFrotas (mock) + hardening + deploy.**
+- 🔄 **Fase 8 — Validação em produção e prontidão pra piloto (escopo
+  redefinido pelo usuário: a integração com o LuckFrotas foi REMOVIDA do
+  plano original — o LuckTank opera sozinho, o bloqueio de KM usa só o
+  histórico do próprio LuckTank).** Em andamento — ver seção própria mais
+  abaixo.
 
 ## Hardening pré-piloto (pós-auditoria, antes da Fase 8)
 
@@ -382,6 +386,58 @@ vez, antes de avançar pra Fase 8.
   decoram**: mudei `TOLERANCIA_DESVIO_CONSUMO` de `0.25` pra `0.5` de
   propósito, rodei `npm test` e vi 1 teste quebrar exatamente como
   esperado; revertido o valor e os 21 voltaram a passar.
+
+## Fase 8 — Validação em produção e prontidão pra piloto
+
+Escopo redefinido pelo usuário: **sem integração com o LuckFrotas** — o
+LuckTank roda sozinho, KM e bloqueio de KM usam só o histórico do próprio
+LuckTank. A coluna `luckfrotas_veiculo_id` (criada na `0001_init.sql` como
+"ponto de integração futura") continua no schema, inerte — nenhuma tela ou
+rota lê/escreve nela; não foi removida porque dropar coluna é uma mudança de
+schema desnecessária pra algo que já não faz mal nenhum sentado ali.
+
+- ✅ **Bloco 1 — Sincronização e sanidade do deploy.**
+  - `origin/main` e o local estavam em sincronia (`043a300`) antes de
+    começar; nada pendente.
+  - **Variáveis de ambiente exigidas** (conferidas por leitura de código,
+    cada `process.env.X` batendo com o `.env.example`): `NEXT_PUBLIC_SUPABASE_URL`,
+    `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`,
+    `GEMINI_API_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
+    Seis no total, nenhum nome divergente.
+  - **Rate limit confirmado ativo em produção**: rajada de 14 requisições
+    sem `qr_token` contra `/api/ocr` em `luck-tank.vercel.app` — as 10
+    primeiras processaram normal, a partir da 11ª voltou `429` (limite de
+    10/min configurado em `lib/rate-limit.ts` funcionando de verdade, não só
+    em dev). Método seguro: `qr_token` ausente é barrado antes de qualquer
+    chamada ao Gemini ou escrita no banco, então o teste não custou nada nem
+    gravou nada.
+  - **Achado durante o teste (não esperado pelo roteiro original)**: a
+    raiz de produção parecia ainda servir a tela de debug da Fase 1, mesmo
+    depois do deploy do Bloco 4. Investigado: **não era o deploy** (`curl`
+    direto já mostrava o redirect novo) — era o **Service Worker do próprio
+    LuckTank** (`public/sw.js`) fazendo cache-first pra `/` desde a Fase 1,
+    com o nome do cache (`lucktank-v1`) nunca tendo mudado entre deploys, o
+    que significa que qualquer navegador que já tivesse visitado o site
+    antes de hoje ficaria preso na versão antiga pra sempre. Corrigido:
+    navegação (documento HTML) agora é **network-first** com fallback pro
+    cache só se estiver offline de verdade; assets com hash de build
+    continuam cache-first (seguro). Cache renomeado pra `lucktank-v2` pra
+    forçar a invalidação imediata em quem já tinha o SW instalado.
+  - **Segundo achado lateral**: `request.formData()` em `/api/ocr` e
+    `/api/abastecimentos` lançava exceção não tratada pra qualquer POST sem
+    `Content-Type: multipart/form-data` (ex: corpo vazio), virando um `500`
+    em vez de um `400` limpo — confirmado tanto em produção (durante o
+    teste de rajada) quanto localmente, com stack trace apontando pro
+    parsing do body. Corrigido com try/catch nos dois endpoints, devolvendo
+    `400 "Requisição inválida."`. Não é falha de segurança (nada é gravado
+    nesse caminho), só uma resposta de erro errada.
+  - **Resquícios do LuckFrotas removidos**: `README.md` (lista de fases
+    desatualizada, ainda citava "Integração LuckFrotas (mock)" na Fase 8) e
+    o status da Fase 8 aqui no `PROJETO.md`. `middleware.ts` já estava limpo
+    desde o Bloco 4 do hardening (sem `/api/sync`/`/api/luckfrotas`). A
+    coluna `luckfrotas_veiculo_id` no banco foi mantida (ver nota acima).
+  - `tsc`, `lint`, `test` (21 testes) e `build` confirmados limpos depois
+    de todas as mudanças.
 
 ## Regras invariantes (não podem quebrar)
 

@@ -57,5 +57,9 @@ app) entra na Fase 4, junto com a extração de fato — nesta fase só o client
 4. OCR — Gemini Flash, tela de confirmação/edição, fallback de foto ilegível.
 5. Offline/PWA — fila local, sincronização, idempotência.
 6. Motor de validação e alertas.
-7. Dashboard completo — gráficos, abas ônibus/motorista, mapa.
-8. Integração LuckFrotas (mock) + hardening + deploy.
+7. Dashboard completo — gráficos, abas ônibus/motorista (mapa pendente, ver PROJETO.md).
+8. Validação em produção e prontidão pra piloto (sem integração externa — o
+   LuckTank opera sozinho).
+
+> Nota: este README reflete o planejamento inicial do projeto. O estado real
+> e atualizado de cada fase está em `PROJETO.md`, que é a fonte de verdade.

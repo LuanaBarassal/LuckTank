@@ -20,7 +20,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const formData = await request.formData();
+  let formData: FormData;
+  try {
+    formData = await request.formData();
+  } catch {
+    // Content-Type ausente/errado (não multipart) — requisição malformada,
+    // não uma exceção do servidor. Sem isso, request.formData() lança e vira
+    // um 500 pra qualquer POST vazio ou mal formado.
+    return NextResponse.json({ error: "Requisição inválida." }, { status: 400 });
+  }
 
   const qrToken = formData.get("qr_token");
   if (typeof qrToken !== "string" || !qrToken) {
