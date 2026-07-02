@@ -167,6 +167,7 @@ export default function FluxoAbastecimento({
     setPasso("processando");
 
     const formData = new FormData();
+    formData.set("qr_token", qrToken);
     formData.set("foto", fotoFile);
 
     try {
@@ -272,7 +273,12 @@ export default function FluxoAbastecimento({
     const formData = new FormData();
     formData.set("qr_token", qrToken);
     for (const [chave, valor] of Object.entries(campos)) formData.set(chave, valor);
-    if (fotoFile) formData.set("foto", fotoFile);
+    if (fotoFile) {
+      // Mesma compressão do caminho offline (lib/offline/comprimir-imagem.ts)
+      // — antes só o offline reduzia o tamanho antes de subir a foto.
+      const fotoComprimida = await comprimirImagem(fotoFile);
+      formData.set("foto", fotoComprimida, fotoFile.name);
+    }
 
     try {
       const resposta = await fetch("/api/abastecimentos", { method: "POST", body: formData });

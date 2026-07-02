@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { abastecimentoSchema } from "@/lib/validacao/schemas";
 import { avaliarAbastecimento, type ContextoAvaliacao } from "@/lib/validacao/regras";
+import { validarFoto } from "@/lib/validacao/arquivo";
+import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
 import type { Json } from "@/types/database";
 
 // `undefined` (não `null`) pra casar com `.optional()` nos schemas —
@@ -30,6 +32,14 @@ function parsearJsonSeguro<T>(texto: string | undefined): T | null {
 // inteiramente neste arquivo, nunca confiando em nada vindo do client além
 // do próprio qr_token.
 export async function POST(request: NextRequest) {
+  const { permitido } = await limitarAbastecimento(obterIp(request));
+  if (!permitido) {
+    return NextResponse.json(
+      { error: "Muitas tentativas. Aguarde um minuto e tente novamente." },
+      { status: 429 }
+    );
+  }
+
   const formData = await request.formData();
 
   const qrToken = campoTexto(formData, "qr_token");
@@ -93,6 +103,12 @@ export async function POST(request: NextRequest) {
 
   if (foto instanceof File && foto.size > 0) {
     const buffer = Buffer.from(await foto.arrayBuffer());
+
+    const validacaoFoto = validarFoto(foto, buffer);
+    if (!validacaoFoto.valido) {
+      return NextResponse.json({ error: validacaoFoto.erro }, { status: 400 });
+    }
+
     fotoHash = createHash("sha256").update(buffer).digest("hex");
 
     const caminho = `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}-${foto.name}`;

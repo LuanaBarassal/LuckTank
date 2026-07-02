@@ -58,6 +58,11 @@ autenticado, com permissões por papel e um motor de alertas graduado
   `/dashboard` em ~106kB — aceitável pro escritório (não é o fluxo leve do
   motorista), mas se crescer mais vale considerar `next/dynamic` pra
   carregar sob demanda.
+- **Rate limit: Upstash Redis** (`@upstash/ratelimit` + `@upstash/redis`,
+  via `lib/rate-limit.ts`). Escolhido em vez de contador em memória porque
+  funções serverless da Vercel não compartilham estado entre invocações.
+  Precisa de `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` no `.env`
+  de produção — sem isso, o rate limit fica inerte (abre, não derruba).
 - **Deploy alvo**: Vercel (app) + Supabase (banco/auth/storage).
 - Motorista nunca fala direto com o Supabase client — sempre via rotas
   `/api/*` do servidor, que usam a service role e aplicam a validação de
@@ -304,7 +309,34 @@ vez, antes de avançar pra Fase 8.
   como Server Action dedicada (mesmo padrão de `onibus/actions.ts` e
   `motoristas/actions.ts`): validar papel via `getUsuarioAtual()` e chamar
   `registrarLog()` antes de mutar — nunca reabrir a policy de RLS pra isso.
-- ⬜ Bloco 3 — rate limit + validação de arquivo nos endpoints públicos.
+- ✅ **Bloco 3 — Proteção dos endpoints públicos e das fotos.**
+  `lib/rate-limit.ts`: rate limit por IP via Upstash (`@upstash/ratelimit` +
+  `@upstash/redis`, sliding window) — não deu pra usar contador em memória
+  porque a Vercel roda funções serverless que não compartilham estado entre
+  invocações (cada request pode cair numa instância nova). Se
+  `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` não estiverem
+  configuradas (dev local sem conta), os limitadores ficam `null` e a
+  checagem sempre libera — **sem rate limit, não sem servidor**; precisa
+  configurar antes do piloto valer em produção (passo a passo dado ao
+  usuário separadamente). `/api/ocr`: 10 requisições/min por IP; `/api/abastecimentos`:
+  20/min por IP. `/api/ocr` **agora exige `qr_token` válido** (antes rodava
+  pra qualquer chamada anônima, sem amarrar a nenhum veículo — dava pra
+  esgotar a cota gratuita do Gemini, ~1.500 leituras/dia, sem credencial
+  nenhuma). Novo `lib/validacao/arquivo.ts`: valida tamanho (teto de 8MB) e
+  assinatura real do arquivo (bytes mágicos de JPEG/PNG/WEBP/HEIC — nunca
+  confia no `accept` do client nem no `file.type` autodeclarado), usado nos
+  dois endpoints que recebem foto. Compressão de imagem padronizada: o
+  caminho online agora chama `comprimirImagem()` (mesma função de
+  `lib/offline/comprimir-imagem.ts`) antes de subir a foto — antes só o
+  caminho offline comprimia. **Validado com testes reais**: `/api/ocr` sem
+  `qr_token` barrado (400 "QR inválido"); arquivo com assinatura inválida
+  barrado (400 "Arquivo não é uma imagem válida"); foto de 9,4MB barrada nos
+  dois endpoints (400 "Foto muito grande"); fluxo completo no navegador
+  (wizard real, veículo `EXM1A23`, motorista Marcos Vieira) com uma foto de
+  1,53MB (1920x1200) enviada — conferido no Storage real que o arquivo
+  gravado ficou com **71,8 KB** (compressão confirmada). Dado de teste
+  (abastecimento, mídia, alerta) removido depois e `km_atual` do veículo
+  restaurado para `160000`.
 - ⬜ Bloco 4 — limpar a porta de entrada (`/`, middleware, título).
 - ⬜ Bloco 5 — testes automatizados do motor de validação (Vitest).
 
