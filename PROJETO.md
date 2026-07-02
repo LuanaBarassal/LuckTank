@@ -63,6 +63,10 @@ autenticado, com permissões por papel e um motor de alertas graduado
   funções serverless da Vercel não compartilham estado entre invocações.
   Precisa de `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` no `.env`
   de produção — sem isso, o rate limit fica inerte (abre, não derruba).
+- **Testes: Vitest** (`npm test`), só cobrindo `lib/validacao/regras.ts` por
+  enquanto (o motor de fraude, que é o que mais custa caro errar em
+  silêncio). Não cobre o resto do app ainda — decisão deliberada do
+  hardening pós-Fase 7, não uma meta de cobertura total.
 - **Deploy alvo**: Vercel (app) + Supabase (banco/auth/storage).
 - Motorista nunca fala direto com o Supabase client — sempre via rotas
   `/api/*` do servidor, que usam a service role e aplicam a validação de
@@ -358,7 +362,26 @@ vez, antes de avançar pra Fase 8.
   Chrome, mascarando o resultado com uma versão em cache daquele outro app —
   artefato do navegador local, não afeta produção (Vercel é outra origem) e
   não é bug deste projeto.
-- ⬜ Bloco 5 — testes automatizados do motor de validação (Vitest).
+- ✅ **Bloco 5 — Rede de segurança no motor de validação (Vitest).**
+  `lib/validacao/regras.ts` codifica os limiares de fraude e não tinha
+  nenhum teste — qualquer alteração acidental passava silenciosa. Adicionado
+  Vitest (`npm test` roda `vitest run`). Extraído o bloqueio de KM (invariante
+  #6) de `app/api/abastecimentos/route.ts` pra uma função pura nova,
+  `kmMenorQueUltimoRegistrado(kmAtual, kmUltimoRegistrado)`, exportada de
+  `regras.ts` — mesmo comportamento de antes (comparação inline), só que
+  agora testável isoladamente; a rota chama essa função em vez de comparar
+  na mão. `lib/validacao/regras.test.ts` (21 testes): cada uma das 5 regras
+  de alerta (capacidade do tanque, nota duplicada, foto duplicada, consumo
+  fora da faixa, litros desproporcionais) com caso positivo, caso negativo e
+  limite exato do limiar (25% de desvio, 1 km/L, litros = capacidade);
+  combinação de duas regras disparando juntas pro mesmo evento (350L +
+  consumo de 33 km/L, espelhando o cenário real testado na Fase 6); e os 4
+  casos do bloqueio de KM (menor bloqueia, igual/maior não bloqueia,
+  primeiro registro do veículo — sem km anterior — nunca bloqueia).
+  **Validado que os testes realmente travam comportamento, não só
+  decoram**: mudei `TOLERANCIA_DESVIO_CONSUMO` de `0.25` pra `0.5` de
+  propósito, rodei `npm test` e vi 1 teste quebrar exatamente como
+  esperado; revertido o valor e os 21 voltaram a passar.
 
 ## Regras invariantes (não podem quebrar)
 

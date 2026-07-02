@@ -120,3 +120,14 @@ export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
     avaliarLitrosDesproporcionais(ctx),
   ].filter((alerta): alerta is AlertaGerado => alerta !== null);
 }
+
+// Bloqueio real (invariante #6), não um alerta — extraído aqui como função
+// pura só pra ficar testável junto do resto do motor. Usado em
+// /api/abastecimentos antes do insert. `kmUltimoRegistrado` null significa
+// "primeiro abastecimento do veículo" — nunca bloqueia nesse caso.
+export function kmMenorQueUltimoRegistrado(
+  kmAtual: number,
+  kmUltimoRegistrado: number | null
+): boolean {
+  return kmUltimoRegistrado != null && kmAtual < kmUltimoRegistrado;
+}

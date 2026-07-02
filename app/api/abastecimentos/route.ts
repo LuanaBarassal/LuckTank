@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { abastecimentoSchema } from "@/lib/validacao/schemas";
-import { avaliarAbastecimento, type ContextoAvaliacao } from "@/lib/validacao/regras";
+import {
+  avaliarAbastecimento,
+  kmMenorQueUltimoRegistrado,
+  type ContextoAvaliacao,
+} from "@/lib/validacao/regras";
 import { validarFoto } from "@/lib/validacao/arquivo";
 import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
 import type { Json } from "@/types/database";
@@ -90,7 +94,7 @@ export async function POST(request: NextRequest) {
   }
 
   // BLOQUEIO real (não é alerta leve): KM não pode ser menor que o último registrado.
-  if (veiculo.km_atual != null && parsed.data.km_atual < veiculo.km_atual) {
+  if (kmMenorQueUltimoRegistrado(parsed.data.km_atual, veiculo.km_atual)) {
     return NextResponse.json(
       { error: `O KM não pode ser menor que o último registrado (${veiculo.km_atual}).` },
       { status: 409 }
