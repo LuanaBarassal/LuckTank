@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LuckTank
 
-## Getting Started
+Sistema de controle de combustível e anti-fraude para frotas. Piloto: Expresso Mundial.
 
-First, run the development server:
+## Setup (Fase 1)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Instalar dependências:
+   ```
+   npm install
+   ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Criar um projeto em https://supabase.com/dashboard e copiar `.env.example` para `.env.local`, preenchendo:
+   - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` — em Project Settings > API.
+   - `SUPABASE_SERVICE_ROLE_KEY` — mesma tela (nunca expor no client).
+   - `GEMINI_API_KEY` — gerar em https://aistudio.google.com/apikey (não habilitar billing no projeto Google, senão o free tier some).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Rodar a migration em `supabase/migrations/0001_init.sql` no SQL Editor do Supabase (ou via Supabase CLI:
+   `npx supabase link` + `npx supabase db push`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Criar o primeiro usuário do escritório: cadastrar no Supabase Auth (Authentication > Users) e depois
+   inserir a linha correspondente em `usuarios` (mesmo `id` do auth.users) com `papel = 'administrador'`
+   e o `empresa_id` de uma linha criada em `empresas`.
 
-## Learn More
+5. Rodar o projeto:
+   ```
+   npm run dev
+   ```
 
-To learn more about Next.js, take a look at the following resources:
+## Estrutura
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `app/page.tsx` — tela pública de status (única rota liberada em "/" pelo middleware) que confirma
+  Supabase/Gemini configurados, service worker registrado e mostra o design system.
+- `app/(motorista)/r/[qrToken]` — fluxo do motorista, sem login, aberto via QR do veículo (público).
+- `app/(escritorio)` — dashboard autenticado (Supabase Auth + RLS por `empresa_id`).
+- `app/api` — rotas de servidor: `gemini/status` (health check), e futuramente OCR, gravação de
+  abastecimento e sincronização offline.
+- `app/manifest.ts` — manifest do PWA (gera `/manifest.webmanifest` automaticamente).
+- `public/sw.js` — service worker mínimo (cache do app shell); registrado só em produção via
+  `components/pwa-register.tsx`.
+- `lib/supabase` — clients Supabase (`client.ts` browser, `server.ts` Server Components, `admin.ts`
+  service role — só usado dentro de `app/api`, protegido por `server-only`).
+- `lib/gemini/client.ts` — client do Gemini (free tier), chave via env, também protegido por
+  `server-only`; usado só a partir de Route Handlers.
+- `lib/validacao` — motor de regras de fraude, determinístico, sem IA (Fase 6).
+- `components/ui` — design system mínimo (`Button`, `Card`, `Input`), mobile-first, toque mínimo
+  de 48px, paleta verde (`primary-*`) + neutros claros (`neutral-*`) definida em `tailwind.config.ts`.
+- `supabase/migrations` — schema do banco.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Uma interface `lib/ocr/provider.ts` (para trocar de Gemini para outro modelo sem tocar no resto do
+app) entra na Fase 4, junto com a extração de fato — nesta fase só o client cru estava pedido.
 
-## Deploy on Vercel
+## Fases
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Fundações (este commit) — projeto, schema, auth do escritório, RLS.
+2. Cadastros — veículos (com geração de QR), motoristas, usuários/permissões.
+3. Fluxo do motorista sem IA — formulário manual completo, com bloqueio de KM.
+4. OCR — Gemini Flash, tela de confirmação/edição, fallback de foto ilegível.
+5. Offline/PWA — fila local, sincronização, idempotência.
+6. Motor de validação e alertas.
+7. Dashboard completo — gráficos, abas ônibus/motorista, mapa.
+8. Integração LuckFrotas (mock) + hardening + deploy.
