@@ -1,19 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Rotas públicas: "/" (tela de status), fluxo do motorista (QR, sem login) e a
-// própria página de login. Tudo o mais é escritório e exige sessão autenticada
-// (RLS resolve empresa_id).
-const PUBLICAS = [
-  "/",
-  "/login",
-  "/r",
-  "/api/ocr",
-  "/api/gemini",
-  "/api/abastecimentos",
-  "/api/sync",
-  "/api/luckfrotas",
-];
+// Rotas públicas: "/" (redirect pro login), fluxo do motorista (QR, sem
+// login) e a própria página de login. Tudo o mais é escritório e exige
+// sessão autenticada (RLS resolve empresa_id).
+const PUBLICAS = ["/", "/login", "/r", "/api/ocr", "/api/gemini", "/api/abastecimentos"];
 
 function ehRotaPublica(pathname: string) {
   return PUBLICAS.some((rota) => pathname === rota || (rota !== "/" && pathname.startsWith(`${rota}/`)));

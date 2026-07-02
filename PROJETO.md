@@ -337,7 +337,27 @@ vez, antes de avançar pra Fase 8.
   gravado ficou com **71,8 KB** (compressão confirmada). Dado de teste
   (abastecimento, mídia, alerta) removido depois e `km_atual` do veículo
   restaurado para `160000`.
-- ⬜ Bloco 4 — limpar a porta de entrada (`/`, middleware, título).
+- ✅ **Bloco 4 — Porta de entrada limpa.** `app/page.tsx` (raiz) era a tela de
+  debug da Fase 1 ("fundação rodando", showcase de design system, botão
+  "Testar câmera") servida publicamente pra qualquer visitante, inclusive em
+  produção. Virou um `redirect("/login")` puro. Os dois componentes que só
+  existiam pra essa tela (`components/motorista/camera-teste.tsx`,
+  `components/status/pwa-status.tsx`) foram **removidos** (não só
+  desconectados — nada mais os usava). `middleware.ts`: tirou `/api/sync` e
+  `/api/luckfrotas` da lista `PUBLICAS` (rotas que ainda não existem no
+  projeto — eram referência morta, confundiam a leitura). **Título da aba
+  conferido**: já estava correto ("LuckTank") em `app/layout.tsx` e
+  `app/(escritorio)/layout.tsx` — o "k" a mais citado no plano não foi
+  encontrado no código; nada foi alterado aí. **Validado**: build mostra a
+  rota `/` caindo de 1.43kB/97.3kB para **138B/87.5kB** de First Load JS
+  (prova que o showcase saiu do bundle); `curl` confirma `307` com
+  `Location: /login`; testado no navegador real (nova aba, sem cache) —
+  redireciona certinho pra tela de login limpa. Durante esse teste local
+  descobri (e limpei) um Service Worker de **outro projeto do usuário (o
+  LuckFrotas real)** ainda registrado pra `http://localhost:3000` no
+  Chrome, mascarando o resultado com uma versão em cache daquele outro app —
+  artefato do navegador local, não afeta produção (Vercel é outra origem) e
+  não é bug deste projeto.
 - ⬜ Bloco 5 — testes automatizados do motor de validação (Vitest).
 
 ## Regras invariantes (não podem quebrar)
