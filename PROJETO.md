@@ -1268,6 +1268,71 @@ Pedido do usuário pós-Bloco 4 de export, em 3 blocos.
   `200` no log pro GET com `veiculo_id` fixo. `tsc`, `lint`, `test` (65 —
   10 novos, entre `nome-arquivo.test.ts` e `resumo.test.ts`) e `build`
   confirmados limpos.
+- ✅ **Correção pós-Bloco 3: o bloco de médias e o total de KM rodado
+  existiam no código, mas estavam "escondidos" demais pra serem
+  encontrados.** A lógica de cálculo (KM rodado na linha de TOTAIS,
+  médias via `calcularEstatisticasVeiculo`) já tinha sido implementada e
+  validada no bloco anterior — o problema real era **onde** essa
+  informação aparecia no arquivo: o total de KM rodado estava correto na
+  linha de totais da aba "Abastecimentos", mas o bloco de médias e o
+  cabeçalho de identificação (empresa/veículo/período/filtros) só
+  existiam numa aba **separada** chamada "Resumo" — fácil de nunca clicar
+  e achar que não existe. No PDF, o bloco de médias aparecia só **depois**
+  da tabela inteira, no fim do documento (às vezes precisando de uma
+  página extra), em vez de logo no topo.
+
+  **Corrigido**: `lib/export/excel.ts` reescrito pra colocar o cabeçalho
+  de identificação (título, empresa, veículo quando aplicável, período,
+  filtros) e o bloco de médias **direto no topo da própria aba
+  "Abastecimentos"**, antes do cabeçalho da tabela — a mesma informação
+  que antes só existia na aba "Resumo" (mantida como referência
+  secundária/compacta, mas não é mais o único lugar onde aparece).
+  Painel congelado (`sheet.views`) ajustado pra travar logo abaixo do
+  cabeçalho da TABELA (não mais da linha 1), já que agora a linha 1 é o
+  título, não os nomes das colunas. `lib/export/pdf.ts`: bloco de médias
+  movido pra **logo depois da faixa de identificação, antes da tabela**
+  (era depois, no fim do documento) — mesmo raciocínio.
+  `CabecalhoExport` (lib/export/tipos.ts) ganhou `veiculoLabel?: string`,
+  preenchido pela rota só quando o export está filtrado por um veículo
+  específico, pra poder mostrar "Veículo: 1450 · EXM1A23" junto do resto
+  da identificação sem precisar inferir isso de `medias` estar presente.
+
+  **Legibilidade**: colunas "Posto" (22→26) e principalmente "Alertas"
+  (34→44) mais largas nos dois formatos; `wrapText` ativado nas células de
+  Posto/Alertas do Excel (o valor da célula nunca foi cortado de verdade —
+  cortar é só uma questão de exibição visual quando a coluna é estreita e
+  o texto não quebra linha — mas sem `wrapText` dava a impressão de dado
+  perdido); no PDF, colunas Posto/Alertas ganharam largura mínima maior via
+  `columnStyles` (o autoTable já quebra linha automaticamente dentro da
+  largura da coluna, então a única correção necessária ali era dar mais
+  espaço, não mudar o comportamento de quebra).
+
+  **Nada de recálculo divergente**: todos os números continuam vindo
+  exatamente das mesmas funções já usadas pela tela — `calcularResumoExport`
+  (totais) e `calcularEstatisticasVeiculo` (médias, quando o export é de um
+  veículo só) — só a apresentação/posição no arquivo mudou.
+
+  **Validado com dado real** (veículo `1450 · EXM1A23`, julho de 2026, 13
+  registros): gerado o Excel de verdade via os módulos do projeto (mesmo
+  padrão `tsx` + guard de `server-only` neutralizado) e **lido de volta
+  linha a linha** — linha 1 é o título, linha 2 tem
+  "Empresa: Expresso Mundial · Veículo: 1450 · EXM1A23 · Período: ...",
+  linha 3 os filtros, linhas 5-8 as 3 médias com a contagem de registros
+  ("Consumo médio (km/L): 7.69 (sobre 12 registro(s) válido(s))" etc. —
+  **idênticas aos cards da tela**), linha 10 o cabeçalho da tabela, e a
+  última linha "TOTAIS" com **KM rodado 10.000, Litros 1.551, Total
+  R$9.185,15** — batendo exato com a soma manual (já confirmada nos
+  blocos anteriores) e com os cards. Painel congelado confirmado na linha
+  10 (logo abaixo do cabeçalho da tabela). PDF gerado e confirmado com
+  assinatura válida, contendo o veículo, o total de KM rodado e as médias
+  no texto bruto do arquivo. Testado também o **export geral do dashboard
+  (sem veículo filtrado)**: cabeçalho sem a linha "Veículo" (omitida
+  corretamente), sem bloco de médias (correto — não faz sentido pra
+  múltiplos veículos juntos), mas com o total de KM rodado somado
+  corretamente na linha de TOTAIS. **Clique real nos 4 botões** (Excel e
+  PDF, tanto no dashboard geral quanto na aba do ônibus filtrada por
+  veículo), no navegador — servidor confirmou `200` nos 4 casos.
+  `tsc`, `lint`, `test` (65) e `build` confirmados limpos.
 
 ## Regras invariantes (não podem quebrar)
 

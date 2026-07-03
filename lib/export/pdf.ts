@@ -12,6 +12,7 @@ const NAVY: [number, number, number] = [10, 22, 40];
 const CYAN: [number, number, number] = [0, 212, 255];
 const CINZA_CLARO: [number, number, number] = [248, 250, 252];
 const CINZA_TEXTO: [number, number, number] = [51, 65, 85];
+const PRETO: [number, number, number] = [20, 20, 20];
 
 // `fotos` é indexado pela posição do registro no array (não por id) — mais
 // simples do que inventar uma chave sintética só pra esse mapeamento local
@@ -28,6 +29,7 @@ export function gerarPdf(
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const largura = doc.internal.pageSize.getWidth();
 
+  // ── Faixa navy no topo — identidade + período/filtros
   doc.setFillColor(...NAVY);
   doc.rect(0, 0, largura, 22, "F");
   doc.setTextColor(255, 255, 255);
@@ -37,12 +39,50 @@ export function gerarPdf(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...CYAN);
-  doc.text(`${cabecalho.empresaNome} — Relatório de abastecimentos`, 10, 17);
+  const subtitulo = cabecalho.veiculoLabel
+    ? `${cabecalho.empresaNome} — Veículo ${cabecalho.veiculoLabel}`
+    : `${cabecalho.empresaNome} — Relatório de abastecimentos`;
+  doc.text(subtitulo, 10, 17);
 
   doc.setTextColor(...CINZA_TEXTO);
   doc.setFontSize(9);
   doc.text(`Período: ${cabecalho.periodoTexto}`, 10, 29);
   doc.text(`Filtros: ${cabecalho.filtrosTexto}`, 10, 34);
+
+  // ── Médias do período — logo no topo, ANTES da tabela (era o problema
+  // real do layout anterior: só aparecia depois da tabela, no fim da
+  // página/documento, fácil de não notar). Mesmos 3 números dos cards da
+  // tela, mesma contagem de registros que embasa cada um.
+  let proximaLinhaY = 41;
+  if (medias) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(...PRETO);
+    doc.text("Médias no período filtrado", 10, proximaLinhaY);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CINZA_TEXTO);
+    const linhasMedia = [
+      `Consumo médio (km/L): ${
+        medias.consumoMedioKml != null
+          ? `${medias.consumoMedioKml.toFixed(2)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Custo médio por km (R$/km): ${
+        medias.custoMedioPorKm != null
+          ? `${formatarMoeda(medias.custoMedioPorKm)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Gasto médio por abastecimento (R$): ${
+        medias.gastoMedioPorAbastecimento != null
+          ? `${formatarMoeda(medias.gastoMedioPorAbastecimento)} (sobre ${medias.totalAbastecimentos} registro(s))`
+          : "—"
+      }`,
+    ];
+    linhasMedia.forEach((linha, indice) => doc.text(linha, 10, proximaLinhaY + 5 + indice * 5));
+    proximaLinhaY += 5 + linhasMedia.length * 5 + 4;
+  }
 
   const colunas = [
     "Foto",
@@ -77,14 +117,22 @@ export function gerarPdf(
   ]);
 
   autoTable(doc, {
-    startY: 40,
+    startY: proximaLinhaY,
     head: [colunas],
     body: linhas,
     theme: "grid",
     headStyles: { fillColor: NAVY, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
     alternateRowStyles: { fillColor: CINZA_CLARO },
-    styles: { fontSize: 7, cellPadding: 1.5, minCellHeight: 10, valign: "middle" },
-    columnStyles: { 0: { cellWidth: 12 } },
+    styles: { fontSize: 7, cellPadding: 1.8, minCellHeight: 10, valign: "middle", overflow: "linebreak" },
+    // Posto e Alertas são os campos mais longos — largura mínima maior pra
+    // não ficar ilegível/cortado (autoTable quebra linha automaticamente
+    // dentro da largura da coluna, então "cortado" aqui seria só ficar
+    // estreito demais pra ler, não perda de dado).
+    columnStyles: {
+      0: { cellWidth: 12 }, // Foto
+      10: { cellWidth: 30 }, // Posto
+      12: { cellWidth: 40 }, // Alertas
+    },
     didDrawCell: (dados) => {
       if (dados.section !== "body" || dados.column.index !== 0) return;
       const foto = fotos.get(dados.row.index);
@@ -110,21 +158,21 @@ export function gerarPdf(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jspdf-autotable estende o doc dinamicamente, sem tipo próprio pra isso
   let finalY = (doc as any).lastAutoTable.finalY + 10;
 
-  // Espaço estimado pro bloco de resumo (+ médias, quando presentes) — se
-  // não couber no que sobrou da página, começa uma página nova em vez de
-  // estourar a margem inferior (jsPDF não quebra texto solto sozinho, só
-  // linhas de autoTable).
-  const alturaEstimada = 16 + (medias ? 8 * 5 : 5 * 5);
+  // Espaço estimado pro bloco de totais recapitulados — se não couber no
+  // que sobrou da página, começa uma página nova em vez de estourar a
+  // margem inferior (jsPDF não quebra texto solto sozinho, só linhas de
+  // autoTable).
+  const alturaEstimada = 16 + 6 * 5;
   const alturaPagina = doc.internal.pageSize.getHeight();
   if (finalY + alturaEstimada > alturaPagina - 10) {
     doc.addPage();
     finalY = 20;
   }
 
-  doc.setTextColor(20, 20, 20);
+  doc.setTextColor(...PRETO);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
-  doc.text("Resumo do período", 10, finalY);
+  doc.text("Totais do período", 10, finalY);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -138,36 +186,6 @@ export function gerarPdf(
     `Consumo médio: ${resumo.consumoMedioKml != null ? `${resumo.consumoMedioKml.toFixed(2)} km/L` : "—"}`,
   ];
   resumoLinhas.forEach((linha, indice) => doc.text(linha, 10, finalY + 6 + indice * 5));
-
-  if (medias) {
-    const yMedias = finalY + 6 + resumoLinhas.length * 5 + 6;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(20, 20, 20);
-    doc.text("Médias do veículo no período filtrado", 10, yMedias);
-
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...CINZA_TEXTO);
-    const linhasMedias = [
-      `Consumo médio (km/L): ${
-        medias.consumoMedioKml != null
-          ? `${medias.consumoMedioKml.toFixed(2)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
-          : "—"
-      }`,
-      `Custo médio por km (R$/km): ${
-        medias.custoMedioPorKm != null
-          ? `${formatarMoeda(medias.custoMedioPorKm)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
-          : "—"
-      }`,
-      `Gasto médio por abastecimento (R$): ${
-        medias.gastoMedioPorAbastecimento != null
-          ? `${formatarMoeda(medias.gastoMedioPorAbastecimento)} (sobre ${medias.totalAbastecimentos} registro(s))`
-          : "—"
-      }`,
-    ];
-    linhasMedias.forEach((linha, indice) => doc.text(linha, 10, yMedias + 6 + indice * 5));
-  }
 
   return Buffer.from(doc.output("arraybuffer"));
 }

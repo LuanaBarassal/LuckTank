@@ -119,6 +119,23 @@ export async function GET(request: NextRequest) {
 
   const resumo = calcularResumoExport(registros);
 
+  // Só quando o export está filtrado por UM veículo específico (aba do
+  // ônibus): calcula as mesmas 3 médias que já aparecem nos cards da tela
+  // (calcularEstatisticasVeiculo, exatamente a mesma função — nunca pode
+  // divergir do que a tela mostra), mostra o veículo no cabeçalho do
+  // arquivo e troca o nome do arquivo pra "LuckTank_<prefixo>_<placa>_<período>"
+  // em vez do nome da empresa.
+  const veiculoFiltrado = filtros.veiculoId
+    ? veiculos.find((v) => v.id === filtros.veiculoId)
+    : undefined;
+  const veiculoLabel = veiculoFiltrado
+    ? formatarVeiculo(veiculoFiltrado.prefixo, veiculoFiltrado.placa)
+    : undefined;
+
+  const medias = veiculoFiltrado
+    ? calcularEstatisticasVeiculo(lista as AbastecimentoParaEstatistica[])
+    : undefined;
+
   const filtrosTexto = construirFiltrosTexto({
     veiculoPlaca: filtros.veiculoId ? mapaPlacas.get(filtros.veiculoId) ?? null : null,
     motoristaNome: filtros.motoristaId
@@ -130,20 +147,8 @@ export async function GET(request: NextRequest) {
     empresaNome: empresa?.nome ?? "—",
     periodoTexto: `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`,
     filtrosTexto,
+    veiculoLabel,
   };
-
-  // Só quando o export está filtrado por UM veículo específico (aba do
-  // ônibus): calcula as mesmas 3 médias que já aparecem nos cards da tela
-  // (calcularEstatisticasVeiculo, exatamente a mesma função — nunca pode
-  // divergir do que a tela mostra) e troca o nome do arquivo pra
-  // "LuckTank_<prefixo>_<placa>_<período>" em vez do nome da empresa.
-  const veiculoFiltrado = filtros.veiculoId
-    ? veiculos.find((v) => v.id === filtros.veiculoId)
-    : undefined;
-
-  const medias = veiculoFiltrado
-    ? calcularEstatisticasVeiculo(lista as AbastecimentoParaEstatistica[])
-    : undefined;
 
   const nomeArquivo = veiculoFiltrado
     ? gerarNomeArquivoExport(

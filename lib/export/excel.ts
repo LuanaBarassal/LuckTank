@@ -11,9 +11,51 @@ const NAVY = "FF0A1628";
 const CYAN_ESCURO = "FF00A8CC";
 const CYAN = "FF00D4FF";
 const CINZA_CLARO = "FFF8FAFC";
+const CINZA_TEXTO = "FF64748B";
 const BORDA = "FFE5E7EB";
+const BRANCO = "FFFFFFFF";
 
 const FORMATO_MOEDA = '"R$"#,##0.00';
+
+// Sem `header` na config de coluna — ExcelJS só auto-escreve a linha 1 como
+// cabeçalho quando `header` está presente; aqui o cabeçalho de identificação
+// (empresa/veículo/período/médias) ocupa as primeiras linhas, então o
+// cabeçalho da TABELA é escrito manualmente mais abaixo, na posição certa.
+const COLUNAS = [
+  { key: "data", width: 12 },
+  { key: "veiculo", width: 14 },
+  { key: "motorista", width: 24 },
+  { key: "km", width: 10 },
+  { key: "kmRodado", width: 12 },
+  { key: "litros", width: 10 },
+  { key: "precoLitro", width: 11 },
+  { key: "total", width: 12 },
+  { key: "consumo", width: 14 },
+  { key: "posto", width: 26 },
+  { key: "cidade", width: 18 },
+  { key: "nota", width: 14 },
+  { key: "alertas", width: 44 },
+  { key: "foto", width: 12 },
+] as const;
+
+const TITULOS_TABELA = [
+  "Data",
+  "Veículo",
+  "Motorista",
+  "KM",
+  "KM rodado",
+  "Litros",
+  "R$/litro",
+  "Total",
+  "Consumo (km/L)",
+  "Posto",
+  "Cidade",
+  "Nº nota",
+  "Alertas",
+  "Foto",
+];
+
+const NUM_COLUNAS = COLUNAS.length;
 
 export async function gerarExcel(
   cabecalho: CabecalhoExport,
@@ -32,31 +74,76 @@ export async function gerarExcel(
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet("Abastecimentos", {
-    views: [{ state: "frozen", ySplit: 1 }],
     properties: { tabColor: { argb: NAVY } },
   });
+  sheet.columns = [...COLUNAS];
 
-  sheet.columns = [
-    { header: "Data", key: "data", width: 12 },
-    { header: "Veículo", key: "veiculo", width: 12 },
-    { header: "Motorista", key: "motorista", width: 24 },
-    { header: "KM", key: "km", width: 10 },
-    { header: "KM rodado", key: "kmRodado", width: 12 },
-    { header: "Litros", key: "litros", width: 10 },
-    { header: "R$/litro", key: "precoLitro", width: 10 },
-    { header: "Total", key: "total", width: 12 },
-    { header: "Consumo (km/L)", key: "consumo", width: 14 },
-    { header: "Posto", key: "posto", width: 22 },
-    { header: "Cidade", key: "cidade", width: 16 },
-    { header: "Nº nota", key: "nota", width: 14 },
-    { header: "Alertas", key: "alertas", width: 34 },
-    { header: "Foto", key: "foto", width: 12 },
-  ];
+  // ── Cabeçalho de identificação — bem no topo da MESMA aba que tem a
+  // tabela, antes dela, pra ninguém precisar trocar de aba/rolar até o fim
+  // do arquivo pra achar essa informação (era o problema real: antes ela só
+  // existia numa aba "Resumo" separada, fácil de não notar).
+  const linhaTitulo = sheet.addRow(["LuckTank — Relatório de Abastecimentos"]);
+  sheet.mergeCells(linhaTitulo.number, 1, linhaTitulo.number, NUM_COLUNAS);
+  linhaTitulo.height = 26;
+  linhaTitulo.getCell(1).font = { bold: true, size: 15, color: { argb: BRANCO } };
+  linhaTitulo.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
+  linhaTitulo.getCell(1).alignment = { vertical: "middle", horizontal: "left", indent: 1 };
 
-  const headerRow = sheet.getRow(1);
+  const identidade = [
+    `Empresa: ${cabecalho.empresaNome}`,
+    cabecalho.veiculoLabel ? `Veículo: ${cabecalho.veiculoLabel}` : null,
+    `Período: ${cabecalho.periodoTexto}`,
+  ]
+    .filter(Boolean)
+    .join("   ·   ");
+  const linhaIdentidade = sheet.addRow([identidade]);
+  sheet.mergeCells(linhaIdentidade.number, 1, linhaIdentidade.number, NUM_COLUNAS);
+  linhaIdentidade.getCell(1).font = { bold: true, size: 11, color: { argb: NAVY } };
+
+  const linhaFiltros = sheet.addRow([`Filtros aplicados: ${cabecalho.filtrosTexto}`]);
+  sheet.mergeCells(linhaFiltros.number, 1, linhaFiltros.number, NUM_COLUNAS);
+  linhaFiltros.getCell(1).font = { italic: true, size: 9, color: { argb: CINZA_TEXTO } };
+
+  sheet.addRow([]);
+
+  // ── Médias do período — mesmos 3 números dos cards da tela (calculados
+  // fora daqui, em lib/onibus/estatisticas.ts, e só passados adiante), com
+  // a mesma contagem de registros que embasa cada uma.
+  if (medias) {
+    const linhaTituloMedias = sheet.addRow(["Médias no período filtrado"]);
+    sheet.mergeCells(linhaTituloMedias.number, 1, linhaTituloMedias.number, NUM_COLUNAS);
+    linhaTituloMedias.getCell(1).font = { bold: true, size: 12, color: { argb: NAVY } };
+
+    const linhasMedia = [
+      `Consumo médio (km/L): ${
+        medias.consumoMedioKml != null
+          ? `${medias.consumoMedioKml.toFixed(2)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Custo médio por km (R$/km): ${
+        medias.custoMedioPorKm != null
+          ? `${formatarMoeda(medias.custoMedioPorKm)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Gasto médio por abastecimento (R$): ${
+        medias.gastoMedioPorAbastecimento != null
+          ? `${formatarMoeda(medias.gastoMedioPorAbastecimento)} (sobre ${medias.totalAbastecimentos} registro(s))`
+          : "—"
+      }`,
+    ];
+    for (const texto of linhasMedia) {
+      const linha = sheet.addRow([texto]);
+      sheet.mergeCells(linha.number, 1, linha.number, NUM_COLUNAS);
+      linha.getCell(1).font = { size: 10, color: { argb: "FF334155" } };
+    }
+    sheet.addRow([]);
+  }
+
+  // ── Cabeçalho da tabela
+  const headerRow = sheet.addRow(TITULOS_TABELA);
   headerRow.height = 22;
   headerRow.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.font = { bold: true, color: { argb: BRANCO } };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
   });
@@ -81,6 +168,12 @@ export async function gerarExcel(
 
     row.getCell("total").numFmt = FORMATO_MOEDA;
     if (typeof r.valorPorLitro === "number") row.getCell("precoLitro").numFmt = FORMATO_MOEDA;
+    // Alertas pode ter vários rótulos concatenados (bem mais que os 44
+    // caracteres da largura da coluna) — sem quebra de linha, o Excel só
+    // corta visualmente o texto na tela (a célula continua com o valor
+    // inteiro, só não aparece inteiro sem clicar) — `wrapText` evita isso.
+    row.getCell("alertas").alignment = { wrapText: true, vertical: "top" };
+    row.getCell("posto").alignment = { wrapText: true, vertical: "top" };
 
     // Link clicável — célula separada (não embutida em texto de outra
     // coluna), como pedido: quem abre o Excel clica em "Ver foto" e vai
@@ -105,9 +198,11 @@ export async function gerarExcel(
     });
   });
 
-  // Linha de totais ao final da própria aba (além do resumo mais completo
-  // na aba separada abaixo) — soma bruta de litros/valor, visível junto da
-  // tabela sem precisar trocar de aba.
+  // Linha de TOTAIS — soma as 3 colunas somáveis (KM rodado, Litros, Total),
+  // igual à linha de total que já existe na tela (Bloco 2). KM rodado só
+  // soma registros com km_rodado válido (mesma regra de sempre); Litros e
+  // Total somam todos os registros — `resumo` já vem com essa distinção
+  // pronta (lib/export/resumo.ts), não recalculado aqui.
   const totaisRow = sheet.addRow({
     data: "TOTAIS",
     kmRodado: resumo.totalKmRodado,
@@ -119,14 +214,26 @@ export async function gerarExcel(
   totaisRow.eachCell({ includeEmpty: true }, (cell) => {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: CYAN } };
     cell.font = { bold: true, color: { argb: NAVY } };
+    cell.border = {
+      top: { style: "medium", color: { argb: NAVY } },
+      bottom: { style: "medium", color: { argb: NAVY } },
+    };
   });
 
+  // Painel fixo logo abaixo do cabeçalho da TABELA (não da linha 1) — ao
+  // rolar, o bloco de identificação/médias some de vista, mas o cabeçalho
+  // das colunas continua visível.
+  sheet.views = [{ state: "frozen", ySplit: headerRow.number }];
+
+  // ── Aba "Resumo" — mesma informação em formato compacto de referência,
+  // útil pra imprimir só essa página ou colar em outro lugar; a informação
+  // "de verdade" já está garantida visível na aba principal acima.
   const resumoSheet = workbook.addWorksheet("Resumo", {
     properties: { tabColor: { argb: CYAN } },
   });
   resumoSheet.columns = [
-    { key: "rotulo", width: 26 },
-    { key: "valor", width: 34 },
+    { key: "rotulo", width: 30 },
+    { key: "valor", width: 40 },
   ];
 
   const tituloRow = resumoSheet.addRow(["LuckTank — Relatório de abastecimentos"]);
@@ -135,6 +242,7 @@ export async function gerarExcel(
 
   const linhas: [string, string | number][] = [
     ["Empresa", cabecalho.empresaNome],
+    ...(cabecalho.veiculoLabel ? ([["Veículo", cabecalho.veiculoLabel]] as [string, string][]) : []),
     ["Período", cabecalho.periodoTexto],
     ["Filtros aplicados", cabecalho.filtrosTexto],
     ["Quantidade de registros", resumo.quantidadeRegistros],
