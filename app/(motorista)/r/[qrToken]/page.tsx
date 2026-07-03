@@ -21,7 +21,7 @@ export default async function AberturaVeiculoPage({
 
   const { data: veiculo } = await admin
     .from("veiculos")
-    .select("id, placa, modelo, ano, km_atual, ativo, empresa_id")
+    .select("id, placa, prefixo, modelo, ano, km_atual, ativo, empresa_id")
     .eq("qr_token", params.qrToken)
     .single();
 
@@ -56,6 +56,7 @@ export default async function AberturaVeiculoPage({
       veiculo={{
         id: veiculo.id,
         placa: veiculo.placa,
+        prefixo: veiculo.prefixo,
         modelo: veiculo.modelo,
         ano: veiculo.ano,
         kmAtual: veiculo.km_atual,

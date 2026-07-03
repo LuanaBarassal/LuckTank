@@ -11,6 +11,7 @@ import { TIPOS_COMBUSTIVEL, ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/sche
 interface VeiculoExistente {
   id: string;
   placa: string;
+  prefixo: string | null;
   modelo: string | null;
   marca: string | null;
   ano: number | null;
@@ -26,6 +27,7 @@ interface VeiculoFormProps {
 
 export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
   const router = useRouter();
+  const [prefixo, setPrefixo] = useState(veiculo?.prefixo ?? "");
   const [placa, setPlaca] = useState(veiculo?.placa ?? "");
   const [modelo, setModelo] = useState(veiculo?.modelo ?? "");
   const [marca, setMarca] = useState(veiculo?.marca ?? "");
@@ -69,6 +71,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
 
     const payload = {
       placa,
+      prefixo: prefixo || null,
       modelo,
       marca,
       ano: ano ? Number(ano) : null,
@@ -94,7 +97,19 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="flex max-w-lg flex-col gap-4">
-      <Input label="Placa" value={placa} onChange={(e) => setPlaca(e.target.value)} required />
+      <div className="grid grid-cols-2 gap-4">
+        <Input
+          label="Prefixo"
+          placeholder="ex.: 1450"
+          value={prefixo}
+          onChange={(e) => setPrefixo(e.target.value)}
+        />
+        <Input label="Placa" value={placa} onChange={(e) => setPlaca(e.target.value)} required />
+      </div>
+      <p className="-mt-2 text-xs text-slate-500">
+        Prefixo é o identificador usado na operação (motorista e escritório se referem ao ônibus por
+        ele) — opcional, mas recomendado.
+      </p>
       <Input label="Modelo" value={modelo ?? ""} onChange={(e) => setModelo(e.target.value)} />
       <Input label="Marca" value={marca ?? ""} onChange={(e) => setMarca(e.target.value)} />
       <Input label="Ano" type="number" value={ano} onChange={(e) => setAno(e.target.value)} />

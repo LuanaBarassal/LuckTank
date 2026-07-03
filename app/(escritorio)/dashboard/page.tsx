@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardTitle } from "@/components/ui/card";
 import GraficoBarra from "@/components/escritorio/grafico-barra";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
-import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import {
   parseFiltrosAbastecimento,
   resolverPeriodo,
@@ -53,7 +53,7 @@ export default async function DashboardPage({
 
   const lista: AbastecimentoAgregavel[] = abastecimentos ?? [];
 
-  const mapaPlacas = new Map(veiculos.map((v) => [v.id, v.placa]));
+  const mapaPlacas = new Map(veiculos.map((v) => [v.id, formatarVeiculo(v.prefixo, v.placa)]));
   const mapaMotoristas = new Map(
     opcoesMotorista
       .filter((o) => o.value.startsWith("id:"))

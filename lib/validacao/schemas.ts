@@ -31,6 +31,10 @@ export const veiculoSchema = z.object({
     .min(5, "Placa muito curta")
     .max(10)
     .transform((v) => v.toUpperCase()),
+  // Identificador operacional (ex.: "1450") — opcional de propósito:
+  // veículos cadastrados antes deste campo existir não têm prefixo, e
+  // preencher não deveria ser bloqueante pro cadastro seguir funcionando.
+  prefixo: z.string().trim().max(20).optional().or(z.literal("")).transform((v) => (v ? v : null)),
   modelo: textoOpcional,
   marca: textoOpcional,
   ano: z.coerce

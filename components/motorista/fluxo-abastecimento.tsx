@@ -14,6 +14,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { adicionarNaFila } from "@/lib/offline/db";
 import { comprimirImagem } from "@/lib/offline/comprimir-imagem";
 import { sincronizarFila } from "@/lib/offline/sync";
+import { formatarVeiculo } from "@/lib/formatacao";
 
 interface Motorista {
   id: string;
@@ -32,6 +33,7 @@ interface Props {
   veiculo: {
     id: string;
     placa: string;
+    prefixo: string | null;
     modelo: string | null;
     ano: number | null;
     kmAtual: number | null;
@@ -349,7 +351,9 @@ export default function FluxoAbastecimento({
               {empresaNome}
             </span>
           </div>
-          <h1 className="font-title text-2xl font-bold text-white">{veiculo.placa}</h1>
+          <h1 className="font-title text-2xl font-bold text-white">
+            {formatarVeiculo(veiculo.prefixo, veiculo.placa)}
+          </h1>
           <p className="text-sm text-slate-300">
             {[veiculo.modelo, veiculo.ano].filter(Boolean).join(" · ")}
           </p>

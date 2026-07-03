@@ -4,7 +4,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import MotoristaForm from "@/components/escritorio/motorista-form";
 import MotoristaAtivoToggle from "@/components/escritorio/motorista-ativo-toggle";
 import { Card, CardTitle } from "@/components/ui/card";
-import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { cn } from "@/lib/utils";
 
 export default async function MotoristaDetalhePage({ params }: { params: { id: string } }) {
@@ -32,9 +32,11 @@ export default async function MotoristaDetalhePage({ params }: { params: { id: s
 
   const idsVeiculos = [...new Set(lista.map((a) => a.veiculo_id))];
   const { data: veiculos } = idsVeiculos.length
-    ? await supabase.from("veiculos").select("id, placa").in("id", idsVeiculos)
-    : { data: [] as { id: string; placa: string }[] };
-  const mapaPlacas = new Map((veiculos ?? []).map((v) => [v.id, v.placa]));
+    ? await supabase.from("veiculos").select("id, placa, prefixo").in("id", idsVeiculos)
+    : { data: [] as { id: string; placa: string; prefixo: string | null }[] };
+  const mapaPlacas = new Map(
+    (veiculos ?? []).map((v) => [v.id, formatarVeiculo(v.prefixo, v.placa)])
+  );
 
   const inicioMes = new Date();
   inicioMes.setDate(1);

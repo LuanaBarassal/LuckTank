@@ -8,7 +8,7 @@ import {
   aplicarFiltrosQuery,
 } from "@/lib/filtros/abastecimentos";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
-import { formatarDataBr } from "@/lib/formatacao";
+import { formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { ROTULO_REGRA } from "@/lib/validacao/rotulos";
 import { baixarFotoComprovante, type FotoBaixada } from "@/lib/midias";
 import { gerarExcel } from "@/lib/export/excel";
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     buscarOpcoesFiltro(supabase),
   ]);
 
-  const mapaPlacas = new Map(veiculos.map((v) => [v.id, v.placa]));
+  const mapaPlacas = new Map(veiculos.map((v) => [v.id, formatarVeiculo(v.prefixo, v.placa)]));
   const mapaMotoristas = new Map(
     opcoesMotorista.filter((o) => o.value.startsWith("id:")).map((o) => [o.value.slice(3), o.label])
   );

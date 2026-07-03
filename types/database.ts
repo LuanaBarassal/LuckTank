@@ -415,6 +415,7 @@ export type Database = {
           marca: string | null
           modelo: string | null
           placa: string
+          prefixo: string | null
           proxima_revisao_data: string | null
           proxima_revisao_km: number | null
           qr_gerado_em: string
@@ -434,6 +435,7 @@ export type Database = {
           marca?: string | null
           modelo?: string | null
           placa: string
+          prefixo?: string | null
           proxima_revisao_data?: string | null
           proxima_revisao_km?: number | null
           qr_gerado_em?: string
@@ -453,6 +455,7 @@ export type Database = {
           marca?: string | null
           modelo?: string | null
           placa?: string
+          prefixo?: string | null
           proxima_revisao_data?: string | null
           proxima_revisao_km?: number | null
           qr_gerado_em?: string

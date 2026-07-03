@@ -1113,6 +1113,51 @@ vez, com validação própria.
   bruto do arquivo. `tsc`, `lint`, `test` (59) e `build` confirmados limpos
   (`/api/export` aparece na lista de rotas).
 
+## Prefixo do veículo, ajustes de design e export na aba do ônibus
+
+Pedido do usuário pós-Bloco 4 de export, em 3 blocos.
+
+- ✅ **Bloco 1 — Prefixo do veículo (identidade operacional).** Na operação
+  real da frota (Expresso Mundial), motorista e escritório se referem ao
+  ônibus pelo **prefixo** (ex.: "1450"), não pela placa — a placa é só o
+  dado legal/de documento. Migration `0008_veiculos_prefixo.sql`
+  (`alter table veiculos add column if not exists prefixo text`, aplicada
+  no projeto real via `supabase db push`) — nullable de propósito, pra não
+  quebrar veículos já cadastrados. `types/database.ts` regenerado via
+  `supabase gen types typescript --linked`.
+
+  **`lib/formatacao.ts`**: nova função pura `formatarVeiculo(prefixo, placa)`
+  — devolve `"1450 · EXM1A23"` quando há prefixo, só `"EXM1A23"` quando não
+  há (null/undefined/string vazia) — testada (`formatacao.test.ts`, 4
+  casos). Usada em **todo** lugar que exibe veículo: lista e detalhe do
+  ônibus, seletor de veículo do filtro (Bloco 1 de filtros), gráfico
+  "consumo por ônibus" do dashboard, painel de alertas, tabela de
+  abastecimentos do motorista, QR (legenda embutida no SVG) e etiqueta de
+  impressão, export Excel/PDF, e o cabeçalho do próprio fluxo do motorista
+  (`/r/[qrToken]`) — o motorista também vê o prefixo, já que é ele quem usa
+  esse identificador no dia a dia, por pedido explícito do usuário.
+
+  **Cadastro/edição** (`components/escritorio/veiculo-form.tsx`): prefixo
+  vira campo principal, lado a lado com a placa (grid de 2 colunas), com
+  nota explicando o papel do campo. `lib/validacao/schemas.ts`:
+  `veiculoSchema.prefixo` opcional (string vazia vira `null`, mesmo padrão
+  de `textoOpcional`).
+
+  **Veículos já cadastrados (ex.: `EXM1A23`) ficam sem prefixo** até
+  alguém preencher — não há migração de dado automática (não daria pra
+  inventar um prefixo que não existe). Preenchimento é manual, pela própria
+  tela de edição do veículo (`/onibus/[id]`) — já tinha o campo antes deste
+  bloco, só ganhou o input novo.
+
+  **Validado no navegador**: antes de preencher, `EXM1A23` aparecia só com
+  a placa em todo lugar (lista, detalhe, seletor, etiqueta). Preenchido o
+  prefixo "1450" pela tela de edição, **todas as telas passaram a mostrar
+  "1450 · EXM1A23" imediatamente**: lista de ônibus, seletor de veículo do
+  dashboard, eixo do gráfico "Consumo médio por ônibus", painel de Alertas
+  (8 alertas, todos com "1450 · EXM1A23" no contexto), e tanto a legenda
+  do QR quanto o título da etiqueta de impressão. `tsc`, `lint`, `test`
+  (63) e `build` confirmados limpos.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

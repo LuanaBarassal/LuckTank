@@ -8,7 +8,7 @@ import VeiculoAtivoToggle from "@/components/escritorio/veiculo-ativo-toggle";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
 import FotoComprovante from "@/components/escritorio/foto-comprovante";
 import { Card, CardTitle } from "@/components/ui/card";
-import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "@/lib/onibus/estatisticas";
 import {
   parseFiltrosAbastecimento,
@@ -130,7 +130,9 @@ export default async function VeiculoDetalhePage({
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-title text-2xl font-bold text-white">{veiculo.placa}</h1>
+        <h1 className="font-title text-2xl font-bold text-white">
+          {formatarVeiculo(veiculo.prefixo, veiculo.placa)}
+        </h1>
         {podeEditar && <VeiculoAtivoToggle id={veiculo.id} ativo={veiculo.ativo} />}
       </div>
 
@@ -157,7 +159,7 @@ export default async function VeiculoDetalhePage({
           {/* eslint-disable-next-line @next/next/no-img-element -- vem de uma Route Handler nossa, não de storage otimizável pelo next/image */}
           <img
             src={`/api/veiculos/${veiculo.id}/qr?formato=svg`}
-            alt={`QR do veículo ${veiculo.placa}`}
+            alt={`QR do veículo ${formatarVeiculo(veiculo.prefixo, veiculo.placa)}`}
             className="mx-auto w-48 rounded-lg bg-white p-2"
           />
           <div className="mt-4 flex flex-col gap-2 text-sm">

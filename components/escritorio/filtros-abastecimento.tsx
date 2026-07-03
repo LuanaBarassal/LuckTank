@@ -10,6 +10,7 @@ import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { calcularPeriodo, type AtalhoPeriodo } from "@/lib/filtros/periodo";
+import { formatarVeiculo } from "@/lib/formatacao";
 import SelectBusca, { type OpcaoSelectBusca } from "./select-busca";
 
 const ATALHOS: { valor: AtalhoPeriodo; rotulo: string }[] = [
@@ -20,7 +21,7 @@ const ATALHOS: { valor: AtalhoPeriodo; rotulo: string }[] = [
 ];
 
 interface FiltrosAbastecimentoProps {
-  veiculos?: { id: string; placa: string }[];
+  veiculos?: { id: string; placa: string; prefixo: string | null }[];
   opcoesMotorista: OpcaoSelectBusca[];
 }
 
@@ -146,7 +147,7 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-400">Veículo</label>
             <SelectBusca
-              opcoes={veiculos.map((v) => ({ value: v.id, label: v.placa }))}
+              opcoes={veiculos.map((v) => ({ value: v.id, label: formatarVeiculo(v.prefixo, v.placa) }))}
               valor={veiculoId}
               aoSelecionar={(valor) => atualizarParams({ veiculo_id: valor })}
               placeholder="Todos os veículos"

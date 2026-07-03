@@ -11,7 +11,7 @@ export interface OpcaoSelect {
 }
 
 export interface OpcoesFiltro {
-  veiculos: { id: string; placa: string }[];
+  veiculos: { id: string; placa: string; prefixo: string | null }[];
   opcoesMotorista: OpcaoSelect[];
 }
 
@@ -19,7 +19,7 @@ export async function buscarOpcoesFiltro(
   supabase: Awaited<ReturnType<typeof createClient>>
 ): Promise<OpcoesFiltro> {
   const [{ data: veiculos }, { data: motoristas }, { data: nomesLivresRaw }] = await Promise.all([
-    supabase.from("veiculos").select("id, placa").order("placa"),
+    supabase.from("veiculos").select("id, placa, prefixo").order("placa"),
     supabase.from("motoristas").select("id, nome").order("nome"),
     supabase
       .from("abastecimentos")

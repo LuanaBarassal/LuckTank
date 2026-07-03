@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { gerarQrPngBuffer, gerarQrSvg } from "@/lib/qr";
+import { formatarVeiculo } from "@/lib/formatacao";
 
 // Autenticado (o middleware já barra sem sessão); a query em si é RLS-scoped
 // pela sessão do usuário — se o veículo não for da empresa dele, vem vazio.
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
   const { data: veiculo, error } = await supabase
     .from("veiculos")
-    .select("id, placa, qr_token")
+    .select("id, placa, prefixo, qr_token")
     .eq("id", params.id)
     .single();
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   const formato = request.nextUrl.searchParams.get("formato") === "png" ? "png" : "svg";
   const baixar = request.nextUrl.searchParams.get("baixar") === "1";
   const arquivo = `qr-${veiculo.placa}`;
+  const legenda = formatarVeiculo(veiculo.prefixo, veiculo.placa);
   const disposicao = baixar ? "attachment" : "inline";
 
   if (formato === "png") {
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     });
   }
 
-  const svg = await gerarQrSvg(url, veiculo.placa);
+  const svg = await gerarQrSvg(url, legenda);
   return new NextResponse(svg, {
     headers: {
       "Content-Type": "image/svg+xml",

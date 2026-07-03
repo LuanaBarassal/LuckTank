@@ -4,6 +4,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/schemas";
+import { formatarVeiculo } from "@/lib/formatacao";
 
 export default async function OnibusPage() {
   const supabase = await createClient();
@@ -11,7 +12,7 @@ export default async function OnibusPage() {
 
   const { data: veiculos } = await supabase
     .from("veiculos")
-    .select("id, placa, modelo, ano, tipo_combustivel, km_atual, ativo")
+    .select("id, placa, prefixo, modelo, ano, tipo_combustivel, km_atual, ativo")
     .order("criado_em", { ascending: false });
 
   return (
@@ -39,7 +40,9 @@ export default async function OnibusPage() {
           <Link key={veiculo.id} href={`/onibus/${veiculo.id}`}>
             <Card variant="dark" className="flex items-center justify-between transition hover:border-cyan-600">
               <div>
-                <div className="font-semibold text-white">{veiculo.placa}</div>
+                <div className="font-semibold text-white">
+                  {formatarVeiculo(veiculo.prefixo, veiculo.placa)}
+                </div>
                 <div className="text-sm text-slate-400">
                   {[veiculo.modelo, veiculo.ano, veiculo.tipo_combustivel && ROTULO_TIPO_COMBUSTIVEL[veiculo.tipo_combustivel as keyof typeof ROTULO_TIPO_COMBUSTIVEL]]
                     .filter(Boolean)
