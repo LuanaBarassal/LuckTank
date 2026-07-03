@@ -24,8 +24,8 @@ export default async function EscritorioLayout({
 
   return (
     <div className="flex min-h-screen bg-navy-950 text-slate-100">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-navy-800 bg-navy-900 p-4 print:hidden">
-        <div className="mb-8 flex items-center gap-3 px-1">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-navy-800 bg-navy-900 p-5 print:hidden">
+        <div className="mb-10 flex items-center gap-3 px-1">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary-800 to-cyan-600 text-sm font-bold text-white shadow-glow-cyan">
             LT
           </div>
@@ -37,11 +37,11 @@ export default async function EscritorioLayout({
 
         <SidebarNav alertasPendentes={alertasPendentes ?? 0} />
 
-        <div className="mt-auto border-t border-navy-800 pt-4">
+        <div className="mt-auto border-t border-navy-800 pt-5">
           <LogoutButton />
         </div>
       </aside>
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8 lg:p-10">{children}</main>
     </div>
   );
 }

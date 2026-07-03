@@ -11,6 +11,9 @@ describe("calcularEstatisticasVeiculo", () => {
       custoMedioPorKm: null,
       gastoMedioPorAbastecimento: null,
       periodo: null,
+      totalLitros: 0,
+      totalValorGasto: 0,
+      totalKmRodado: 0,
     });
   });
 
@@ -28,6 +31,9 @@ describe("calcularEstatisticasVeiculo", () => {
     expect(stats.custoMedioPorKm).toBeCloseTo(420 / 600, 5);
     expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(420 / 2, 5);
     expect(stats.periodo).toEqual({ inicio: "2026-07-01", fim: "2026-07-02" });
+    expect(stats.totalLitros).toBe(70);
+    expect(stats.totalValorGasto).toBe(420);
+    expect(stats.totalKmRodado).toBe(600);
   });
 
   it("exclui registros sem km_rodado válido do consumo/custo por km, mas inclui no gasto médio", () => {
@@ -44,6 +50,11 @@ describe("calcularEstatisticasVeiculo", () => {
     expect(stats.custoMedioPorKm).toBeCloseTo(300 / 500, 5);
     // Os dois entram no gasto médio por abastecimento:
     expect(stats.gastoMedioPorAbastecimento).toBeCloseTo((400 + 300) / 2, 5);
+    // Litros/valor somam os DOIS registros; km rodado só soma o válido —
+    // é exatamente a mesma linha de TOTAL que aparece na tabela.
+    expect(stats.totalLitros).toBe(110);
+    expect(stats.totalValorGasto).toBe(700);
+    expect(stats.totalKmRodado).toBe(500);
   });
 
   it("trata km_rodado igual a zero como inválido (não nulo, mas ainda assim excluído)", () => {
@@ -55,6 +66,11 @@ describe("calcularEstatisticasVeiculo", () => {
     expect(stats.consumoMedioKml).toBeNull();
     expect(stats.custoMedioPorKm).toBeNull();
     expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(250, 5);
+    // km_rodado=0 não conta pro total de KM rodado (mesma regra de "inválido"),
+    // mas litros/valor continuam contando normalmente.
+    expect(stats.totalLitros).toBe(40);
+    expect(stats.totalValorGasto).toBe(250);
+    expect(stats.totalKmRodado).toBe(0);
   });
 
   it("consumo/custo por km ficam null quando NENHUM registro tem km_rodado válido", () => {
@@ -68,5 +84,8 @@ describe("calcularEstatisticasVeiculo", () => {
     expect(stats.custoMedioPorKm).toBeNull();
     expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(400, 5);
     expect(stats.periodo).toEqual({ inicio: "2026-07-01", fim: "2026-07-01" });
+    expect(stats.totalLitros).toBe(60);
+    expect(stats.totalValorGasto).toBe(400);
+    expect(stats.totalKmRodado).toBe(0);
   });
 });

@@ -16,7 +16,7 @@ export default function SidebarNav({ alertasPendentes }: { alertasPendentes: num
   const pathname = usePathname();
 
   return (
-    <nav className="flex flex-col gap-1">
+    <nav className="flex flex-col gap-1.5">
       {NAV.map((item) => {
         const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
@@ -24,7 +24,7 @@ export default function SidebarNav({ alertasPendentes }: { alertasPendentes: num
             key={item.href}
             href={item.href}
             className={cn(
-              "flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition",
+              "flex items-center justify-between rounded-xl px-3.5 py-3 text-sm font-medium transition",
               ativo
                 ? "bg-cyan-500/15 text-cyan-300"
                 : "text-slate-400 hover:bg-white/5 hover:text-white"

@@ -128,7 +128,7 @@ export default async function VeiculoDetalhePage({
   const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
         <h1 className="font-title text-2xl font-bold text-white">
           {formatarVeiculo(veiculo.prefixo, veiculo.placa)}
@@ -142,7 +142,7 @@ export default async function VeiculoDetalhePage({
 
       <ResumoEstatisticas estatisticas={estatisticas} periodoTexto={periodoTexto} />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         <Card variant="dark">
           <CardTitle variant="dark">Dados do veículo</CardTitle>
           {podeEditar ? (
@@ -207,15 +207,15 @@ export default async function VeiculoDetalhePage({
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-800 text-slate-400">
-                  <th className="py-2 pr-4 font-medium">Foto</th>
-                  <th className="py-2 pr-4 font-medium">Data</th>
-                  <th className="py-2 pr-4 font-medium">KM atual</th>
-                  <th className="py-2 pr-4 font-medium">KM rodado</th>
-                  <th className="py-2 pr-4 font-medium">Litros</th>
-                  <th className="py-2 pr-4 font-medium">R$/litro</th>
-                  <th className="py-2 pr-4 font-medium">Total</th>
-                  <th className="py-2 pr-4 font-medium">Consumo (km/L)</th>
-                  <th className="py-2 pr-4 font-medium">Motorista</th>
+                  <th className="py-3 pr-5 font-medium">Foto</th>
+                  <th className="py-3 pr-5 font-medium">Data</th>
+                  <th className="py-3 pr-5 font-medium">KM atual</th>
+                  <th className="py-3 pr-5 font-medium">KM rodado</th>
+                  <th className="py-3 pr-5 font-medium">Litros</th>
+                  <th className="py-3 pr-5 font-medium">R$/litro</th>
+                  <th className="py-3 pr-5 font-medium">Total</th>
+                  <th className="py-3 pr-5 font-medium">Consumo (km/L)</th>
+                  <th className="py-3 pr-5 font-medium">Motorista</th>
                 </tr>
               </thead>
               <tbody>
@@ -232,12 +232,12 @@ export default async function VeiculoDetalhePage({
                         nivel === "atencao" && "bg-atencao-500/5"
                       )}
                     >
-                      <td className="py-2 pr-4">
+                      <td className="py-3.5 pr-5">
                         {midiaId ? <FotoComprovante midiaId={midiaId} /> : <span className="text-slate-600">—</span>}
                       </td>
                       <td
                         className={cn(
-                          "py-2 pr-4",
+                          "py-3.5 pr-5",
                           nivel === "critico" && "border-l-4 border-l-critico-500 pl-2",
                           nivel === "atencao" && "border-l-4 border-l-atencao-500 pl-2"
                         )}
@@ -257,23 +257,35 @@ export default async function VeiculoDetalhePage({
                           )}
                         </div>
                       </td>
-                      <td className="py-2 pr-4">{a.km_atual}</td>
-                      <td className="py-2 pr-4">{a.km_rodado != null ? `${a.km_rodado} km` : "—"}</td>
-                      <td className="py-2 pr-4">{a.litros} L</td>
-                      <td className="py-2 pr-4">
+                      <td className="py-3.5 pr-5">{a.km_atual}</td>
+                      <td className="py-3.5 pr-5">{a.km_rodado != null ? `${a.km_rodado} km` : "—"}</td>
+                      <td className="py-3.5 pr-5">{a.litros} L</td>
+                      <td className="py-3.5 pr-5">
                         {valorPorLitro != null ? formatarMoeda(valorPorLitro) : "—"}
                       </td>
-                      <td className="py-2 pr-4">{formatarMoeda(a.valor_total)}</td>
-                      <td className="py-2 pr-4">
+                      <td className="py-3.5 pr-5">{formatarMoeda(a.valor_total)}</td>
+                      <td className="py-3.5 pr-5">
                         {a.consumo_kml != null ? Number(a.consumo_kml).toFixed(2) : "—"}
                       </td>
-                      <td className="py-2 pr-4">
+                      <td className="py-3.5 pr-5">
                         {a.motorista_nome_livre ?? (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ?? "—"}
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-navy-700 font-semibold text-white">
+                  <td className="py-3.5 pr-5" colSpan={3}>
+                    Total no período filtrado
+                  </td>
+                  <td className="py-3.5 pr-5">{estatisticas.totalKmRodado} km</td>
+                  <td className="py-3.5 pr-5">{estatisticas.totalLitros.toFixed(1)} L</td>
+                  <td className="py-3.5 pr-5" />
+                  <td className="py-3.5 pr-5">{formatarMoeda(estatisticas.totalValorGasto)}</td>
+                  <td className="py-3.5 pr-5" colSpan={2} />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -301,8 +313,8 @@ function ResumoEstatisticas({
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         <CardEstatistica
           label="Consumo médio no período filtrado"
           valor={estatisticas.consumoMedioKml != null ? `${estatisticas.consumoMedioKml.toFixed(2)} km/L` : null}
@@ -351,7 +363,7 @@ function CardEstatistica({
   rodape?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-navy-800 bg-navy-900 p-5">
+    <div className="rounded-2xl border border-navy-800 bg-navy-900 p-6">
       <div className="text-sm text-slate-400">{label}</div>
       <div className="mt-2 text-2xl font-bold text-white">{valor ?? "—"}</div>
       <div className="mt-1 text-xs text-slate-500">

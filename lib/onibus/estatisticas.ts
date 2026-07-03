@@ -21,6 +21,14 @@ export interface EstatisticasVeiculo {
   // null só quando não há abastecimento nenhum.
   gastoMedioPorAbastecimento: number | null;
   periodo: { inicio: string; fim: string } | null;
+  // Totais pra linha de TOTAL da tabela (não médias) — litros/valor somam
+  // TODOS os registros (mesma regra do gasto médio: sempre presentes,
+  // sempre positivos); km rodado só soma os registros com km_rodado válido
+  // (mesma regra crítica do consumo médio — registro sem km anterior pra
+  // comparar não tem "km rodado" nenhum pra somar).
+  totalLitros: number;
+  totalValorGasto: number;
+  totalKmRodado: number;
 }
 
 export function calcularEstatisticasVeiculo(
@@ -36,10 +44,14 @@ export function calcularEstatisticasVeiculo(
       custoMedioPorKm: null,
       gastoMedioPorAbastecimento: null,
       periodo: null,
+      totalLitros: 0,
+      totalValorGasto: 0,
+      totalKmRodado: 0,
     };
   }
 
   const somaValorTotal = lista.reduce((soma, a) => soma + a.valor_total, 0);
+  const somaLitrosTotal = lista.reduce((soma, a) => soma + a.litros, 0);
   const gastoMedioPorAbastecimento = somaValorTotal / totalAbastecimentos;
 
   const datas = lista.map((a) => a.data_abastecimento).sort();
@@ -63,6 +75,9 @@ export function calcularEstatisticasVeiculo(
       custoMedioPorKm: null,
       gastoMedioPorAbastecimento,
       periodo,
+      totalLitros: somaLitrosTotal,
+      totalValorGasto: somaValorTotal,
+      totalKmRodado: 0,
     };
   }
 
@@ -82,5 +97,8 @@ export function calcularEstatisticasVeiculo(
     custoMedioPorKm,
     gastoMedioPorAbastecimento,
     periodo,
+    totalLitros: somaLitrosTotal,
+    totalValorGasto: somaValorTotal,
+    totalKmRodado: somaKmRodadoValidos,
   };
 }

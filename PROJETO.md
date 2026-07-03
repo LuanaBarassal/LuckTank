@@ -1157,6 +1157,50 @@ Pedido do usuário pós-Bloco 4 de export, em 3 blocos.
   (8 alertas, todos com "1450 · EXM1A23" no contexto), e tanto a legenda
   do QR quanto o título da etiqueta de impressão. `tsc`, `lint`, `test`
   (63) e `build` confirmados limpos.
+- ✅ **Bloco 2 — Ajustes de design (respiro) + total de KM rodado.** Paleta
+  navy/ciano intocada — só espaçamento/leitura, como pedido.
+
+  **Respiro**: `components/ui/card.tsx` ganhou padding por variante
+  (`PADDING_VARIANTS`) — `dark` (escritório) foi de `p-5` pra `p-6`,
+  `light` (fluxo do motorista) ficou **intocado** em `p-5` de propósito
+  (tem alvo de toque/legibilidade ao sol já calibrados, não é o que estava
+  "apertado" — só o escritório foi citado no pedido). Mesma lógica no
+  `CardTitle` (`mb-3` light, `mb-4` dark). `app/(escritorio)/layout.tsx`:
+  sidebar `p-4→p-5`, logo `mb-8→mb-10`, main `p-8→p-8 lg:p-10`.
+  `sidebar-nav.tsx`: itens `py-2.5→py-3`, `gap-1→gap-1.5`.
+  `filtros-abastecimento.tsx` (compartilhado dashboard/aba do ônibus):
+  `p-4→p-5`, `gap-3→gap-4` nos dois níveis. Dashboard: título
+  `mb-6→mb-8`, container geral `gap-8→gap-10`, cards de resumo
+  `gap-4→gap-5`/`p-5→p-6`, grid de gráficos `gap-6→gap-8`. Aba do ônibus:
+  container geral `gap-6→gap-8`, grid "Dados do veículo"/QR `gap-6→gap-8`,
+  grid das 3 médias `gap-4→gap-5`, `CardEstatistica` `p-5→p-6`. Tabela de
+  histórico: cabeçalho `py-2→py-3`, linhas `py-2→py-3.5` (mais altura de
+  linha, pedido explícito).
+
+  **Total de KM rodado**: `lib/onibus/estatisticas.ts` ganhou 3 campos
+  novos em `EstatisticasVeiculo` — `totalLitros`, `totalValorGasto` (somam
+  **todos** os registros do período, mesma regra do gasto médio por
+  abastecimento) e `totalKmRodado` (só soma registros com km_rodado válido
+  — mesma regra crítica do consumo médio; testado explicitamente que
+  km_rodado nulo/zero fica de fora da soma mas litros/valor continuam
+  contando). 4 testes existentes atualizados + assinaturas novas cobrindo
+  os 3 totais em cada cenário. Nova linha `<tfoot>` na tabela "Histórico de
+  abastecimentos" (`onibus/[id]/page.tsx`): "Total no período filtrado" com
+  KM rodado, Litros e Total (R$) — usa os mesmos `estatisticas` que já
+  alimentam os 3 cards de média (reflete o período filtrado inteiro, não só
+  as linhas visíveis quando a tabela está limitada a 50, mesma nota já
+  existente pras médias).
+
+  **Validado no navegador**: respiro visivelmente maior nas duas telas
+  (dashboard e aba do ônibus), consistente entre elas — mesmos incrementos
+  de padding/gap nos dois lugares. Linha de total conferida à mão contra o
+  histórico real do `EXM1A23` (13 registros): **10.000 km, 1.551,0 L,
+  R$ 9.185,15** — bate exato somando as 13 linhas visíveis na tela (KM
+  rodado dos 12 registros com km válido: 490+10+1000+500+500+500+1000+
+  1000+500+1500+1000+2000 = 10.000; litros dos 13: soma 1.551; valor dos
+  13: soma R$9.185,15). `tsc`, `lint`, `test` (63 — os 4 de
+  `estatisticas.test.ts` ganharam asserts novos, sem aumentar a contagem de
+  `it()`) e `build` confirmados limpos.
 
 ## Regras invariantes (não podem quebrar)
 

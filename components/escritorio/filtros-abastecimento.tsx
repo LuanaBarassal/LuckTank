@@ -86,7 +86,7 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
   const temFiltroAtivo = Boolean(de || ate || veiculoId || motoristaIdParam || motoristaNomeParam);
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-navy-800 bg-navy-900 p-4">
+    <div className="flex flex-col gap-4 rounded-2xl border border-navy-800 bg-navy-900 p-5">
       <div className="flex flex-wrap items-center gap-2">
         {ATALHOS.map((atalho) => (
           <button
@@ -123,7 +123,7 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
         )}
       </div>
 
-      <div className={cn("grid gap-3 sm:grid-cols-2", veiculos ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+      <div className={cn("grid gap-4 sm:grid-cols-2", veiculos ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-slate-400">De</label>
           <input

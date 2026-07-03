@@ -92,15 +92,15 @@ export default async function DashboardPage({
   ];
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-10">
       <div>
-        <h1 className="mb-6 font-title text-2xl font-bold text-white">Dashboard</h1>
+        <h1 className="mb-8 font-title text-2xl font-bold text-white">Dashboard</h1>
 
         <Suspense fallback={<div className="h-[132px] rounded-2xl border border-navy-800 bg-navy-900" />}>
           <FiltrosAbastecimento veiculos={veiculos} opcoesMotorista={opcoesMotorista} />
         </Suspense>
 
-        <div className="mb-4 mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-5 mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">Período: {periodoTexto}</p>
           <div className="flex items-center gap-2">
             <a
@@ -118,9 +118,9 @@ export default async function DashboardPage({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-5 md:grid-cols-4">
           {RESUMO.map((item) => (
-            <div key={item.label} className="rounded-2xl border border-navy-800 bg-navy-900 p-5 shadow-sm">
+            <div key={item.label} className="rounded-2xl border border-navy-800 bg-navy-900 p-6 shadow-sm">
               <div className="text-sm text-slate-400">{item.label}</div>
               <div className="mt-2 text-2xl font-bold text-white">{item.valor}</div>
             </div>
@@ -128,7 +128,7 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-8 lg:grid-cols-2">
         <Card variant="dark">
           <CardTitle variant="dark">Gasto por dia</CardTitle>
           {gastoPorDia.length ? (

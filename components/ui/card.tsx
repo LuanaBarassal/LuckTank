@@ -18,10 +18,19 @@ const VARIANTS: Record<Variant, string> = {
   dark: "border-navy-800 bg-navy-900 text-slate-100",
 };
 
+// `dark` (escritório) ganhou mais respiro que `light` (fluxo do motorista) de
+// propósito — o motorista tem alvo de toque/legibilidade ao sol já calibrados
+// (ver regra de design por contexto no PROJETO.md), não mexer no padding dele
+// só porque o escritório estava apertado.
+const PADDING_VARIANTS: Record<Variant, string> = {
+  light: "p-5",
+  dark: "p-6",
+};
+
 export function Card({ variant = "light", className, ...props }: CardProps) {
   return (
     <div
-      className={cn("rounded-2xl border p-5 shadow-sm", VARIANTS[variant], className)}
+      className={cn("rounded-2xl border shadow-sm", VARIANTS[variant], PADDING_VARIANTS[variant], className)}
       {...props}
     />
   );
@@ -32,12 +41,12 @@ interface CardTitleProps extends HTMLAttributes<HTMLHeadingElement> {
 }
 
 const TITLE_VARIANTS: Record<Variant, string> = {
-  light: "text-neutral-900",
-  dark: "text-white",
+  light: "text-neutral-900 mb-3",
+  dark: "text-white mb-4",
 };
 
 export function CardTitle({ variant = "light", className, ...props }: CardTitleProps) {
   return (
-    <h2 className={cn("mb-3 text-lg font-semibold", TITLE_VARIANTS[variant], className)} {...props} />
+    <h2 className={cn("text-lg font-semibold", TITLE_VARIANTS[variant], className)} {...props} />
   );
 }
