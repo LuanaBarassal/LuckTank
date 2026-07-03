@@ -6,6 +6,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import VeiculoForm from "@/components/escritorio/veiculo-form";
 import VeiculoAtivoToggle from "@/components/escritorio/veiculo-ativo-toggle";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
+import FotoComprovante from "@/components/escritorio/foto-comprovante";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
 import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "@/lib/onibus/estatisticas";
@@ -105,6 +106,24 @@ export default async function VeiculoDetalhePage({
     }
   }
 
+  // Uma foto por abastecimento na prática (o wizard só permite uma) — se um
+  // dia existir mais de uma linha em `midias` pro mesmo abastecimento, fica
+  // valendo a mais recente (a query já não teria ordem garantida sem isso).
+  const { data: midiasDosAbastecimentos } = idsAbastecimentos.length
+    ? await supabase
+        .from("midias")
+        .select("id, entidade_id, criado_em")
+        .eq("entidade_tipo", "abastecimento")
+        .eq("tipo", "foto_comprovante")
+        .in("entidade_id", idsAbastecimentos)
+        .order("criado_em", { ascending: false })
+    : { data: [] as { id: string; entidade_id: string; criado_em: string }[] };
+
+  const mapaMidiaId = new Map<string, string>();
+  for (const midia of midiasDosAbastecimentos ?? []) {
+    if (!mapaMidiaId.has(midia.entidade_id)) mapaMidiaId.set(midia.entidade_id, midia.id);
+  }
+
   const podeEditar = usuario.papel === "gerente" || usuario.papel === "administrador";
   const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
@@ -186,6 +205,7 @@ export default async function VeiculoDetalhePage({
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-navy-800 text-slate-400">
+                  <th className="py-2 pr-4 font-medium">Foto</th>
                   <th className="py-2 pr-4 font-medium">Data</th>
                   <th className="py-2 pr-4 font-medium">KM atual</th>
                   <th className="py-2 pr-4 font-medium">KM rodado</th>
@@ -200,6 +220,7 @@ export default async function VeiculoDetalhePage({
                 {abastecimentos.map((a) => {
                   const nivel = mapaNivelAlerta.get(a.id);
                   const valorPorLitro = a.litros > 0 ? a.valor_total / a.litros : null;
+                  const midiaId = mapaMidiaId.get(a.id);
                   return (
                     <tr
                       key={a.id}
@@ -209,6 +230,9 @@ export default async function VeiculoDetalhePage({
                         nivel === "atencao" && "bg-atencao-500/5"
                       )}
                     >
+                      <td className="py-2 pr-4">
+                        {midiaId ? <FotoComprovante midiaId={midiaId} /> : <span className="text-slate-600">—</span>}
+                      </td>
                       <td
                         className={cn(
                           "py-2 pr-4",

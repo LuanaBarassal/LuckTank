@@ -958,6 +958,74 @@ vez, com validação própria.
   qualquer `File` recebido (compressão, hash, EXIF) foi validado
   end-to-end via chamada direta ao endpoint. `tsc`, `lint`, `test` (50) e
   `build` confirmados limpos.
+- ✅ **Bloco 3 — Foto no histórico do escritório + fechamento de um buraco
+  real de isolamento por tenant no Storage.**
+
+  **Achado crítico, corrigido neste bloco**: o bucket `comprovantes` foi
+  criado `public = true` na migration `0004` (Fase 3), com uma policy de
+  `SELECT` em `storage.objects` **sem nenhum filtro de empresa**
+  (`using (bucket_id = 'comprovantes')`). Bucket público + policy aberta
+  significa que a URL de qualquer foto de comprovante (salva em
+  `midias.url`) era acessível por qualquer pessoa com o link, de qualquer
+  empresa — o path (`empresa_id/veiculo_id/arquivo`) só escondia isso por
+  obscuridade, não isolava de verdade. Isso **violava o invariante #1**
+  desde a Fase 3, mas nunca tinha sido explorado por nada na UI porque
+  nenhuma tela do escritório chegou a exibir essas fotos até este bloco ser
+  o primeiro a precisar mostrá-las. Corrigido na migration
+  `0007_comprovantes_storage_privado.sql` (aplicada no projeto real via
+  `supabase db push`): bucket vira privado (`public = false`), a policy
+  aberta é removida — sem substituir por outra policy de `storage.objects`,
+  porque o acesso agora só passa pela rota autenticada abaixo.
+
+  **`app/api/midias/[id]/route.ts`** (nova, autenticada): duas camadas de
+  isolamento, não uma só — (1) a linha de `midias` é buscada com o client de
+  **sessão** (RLS ativo; `midias_select` já existia desde a `0001`, filtra
+  por `empresa_id = usuario_empresa_id()`) — se a mídia for de outra
+  empresa, a query volta vazia, tratada como 404 (nunca revela "existe mas
+  não é sua" vs. "não existe"); (2) só depois disso, com o path já
+  confirmado como da empresa certa, o arquivo é baixado do Storage via
+  service role (que ignora RLS de Storage, mas nesse ponto o isolamento já
+  foi garantido pelo passo 1 — mesmo padrão de duas camadas descrito no
+  invariante #4). Suporta `?baixar=1` pra forçar download com
+  `Content-Disposition: attachment` (mesmo padrão de
+  `/api/veiculos/[id]/qr`); sem o parâmetro, serve inline pra exibição.
+
+  **UI**: `components/escritorio/foto-comprovante.tsx` (Client Component) —
+  miniatura 48×48 clicável (`<img src="/api/midias/[id]">`, nunca a URL de
+  Storage direta) que abre um lightbox (overlay, fecha com Esc ou clique
+  fora) com a foto em tamanho grande e um link "Baixar original"
+  (`?baixar=1`). Nova coluna "Foto" na tabela de "Histórico de
+  abastecimentos" (`onibus/[id]/page.tsx`) — busca todas as `midias` dos
+  abastecimentos exibidos numa query só (mesmo padrão da busca de alertas
+  já existente na página), mapeando `abastecimento_id → midia_id` (se um dia
+  existir mais de uma foto por abastecimento, fica valendo a mais recente).
+  "—" quando não há foto associada.
+
+  **Validado**: `npx supabase migration list` confirmou a `0007` aplicada no
+  projeto real; `curl` direto na URL pública antiga de uma foto real
+  (formato `.../object/public/comprovantes/...`) confirmado **400** depois
+  da migration (antes seria 200 — bloqueio de verdade, não só teórico).
+  **No navegador**, logado como o administrador real: miniatura renderiza a
+  foto de teste real (comprovante sintético da Fase 4, "POSTO BR CAMPINAS"),
+  clique abre o lightbox em tamanho grande, "Baixar original" e "Fechar"
+  funcionando. **Isolamento por tenant confirmado no nível que realmente
+  importa (RLS)**: criada uma empresa + usuário de teste totalmente
+  isolados (fora do navegador, via `@supabase/supabase-js` com uma sessão
+  real trocada por `verifyOtp` — evita o viés de cookie compartilhado entre
+  abas do mesmo navegador, que mascarou uma tentativa inicial de teste
+  direto no Chrome), e a tentativa de ler uma `midia` da Expresso Mundial
+  logado como a empresa de teste **voltou vazia** (RLS filtrou, exatamente
+  como as outras tabelas já validadas desde a Fase 1). Empresa/usuário de
+  teste removidos por completo depois. `tsc`, `lint`, `test` (50) e `build`
+  confirmados limpos (`/api/midias/[id]` aparece na lista de rotas do
+  build).
+
+  **Não incluído neste bloco** (fora do que foi pedido, mas registrado pra
+  não esquecer): a mesma coluna de foto não foi adicionada à tabela
+  "Últimos registros" da página de detalhe do motorista
+  (`motoristas/[id]/page.tsx`) — só a tabela explicitamente chamada
+  "Histórico de abastecimentos" (aba do ônibus) ganhou a coluna. Fácil de
+  estender se fizer sentido depois.
 
 ## Regras invariantes (não podem quebrar)
 
