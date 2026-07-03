@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-02 (Fase 8, Bloco 3 — roteiro de teste de fumaça).
+Última atualização: 2026-07-03 (fim da Fase 8 — validação em produção e prontidão pra piloto).
 
 ## Visão do produto
 
@@ -551,7 +551,17 @@ schema desnecessária pra algo que já não faz mal nenhum sentado ali.
   pelo usuário (não por mim) em `luck-tank.vercel.app`, com dados reais da
   Expresso Mundial — ver checklist completo na seção "Roteiro de teste de
   fumaça em produção" logo abaixo.
-- ⬜ Bloco 4 — CI (GitHub Actions).
+- ✅ **Bloco 4 — CI no GitHub Actions.** `.github/workflows/ci.yml` roda a
+  cada push/PR pra `main`: `npm ci` → `tsc --noEmit` → `lint` → `test`
+  (Vitest, 21 testes) → `build`. Usa env vars placeholder (documentadas
+  inline no workflow) só pro build/lint/test — **confirmado localmente**
+  rodando `next build` com o `.env.local` temporariamente removido (mesma
+  condição do CI): passa limpo, porque nenhuma página estática chama
+  Supabase/Gemini de verdade durante o `next build` (as páginas que
+  precisam de dado real são todas `ƒ` dinâmicas, só rodam sob demanda em
+  produção). Não tenho acesso credenciado ao GitHub Actions desta sessão
+  (sem `gh` autenticado) pra confirmar o run verde direto — o usuário
+  confirma na aba Actions do repositório.
 
 ## Roteiro de teste de fumaça em produção
 
