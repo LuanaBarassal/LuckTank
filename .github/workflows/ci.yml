@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verificar:
+    name: Verificar (tsc, lint, test, build)
+    runs-on: ubuntu-latest
+    # Placeholders — nenhum segredo real é necessário pra build/lint/test:
+    # nenhuma página estática chama o Supabase/Gemini de verdade durante o
+    # `next build` (confirmado rodando a build local sem .env.local nenhum).
+    # Isso é só documentação inline de quais env vars o app espera em
+    # produção (ver .env.example) + uma rede de segurança caso algum código
+    # futuro passe a depender delas no build.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+      GEMINI_API_KEY: placeholder-gemini-key
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Type check (tsc)
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Testes (Vitest)
+        run: npm test
+
+      - name: Build de produção
+        run: npm run build
