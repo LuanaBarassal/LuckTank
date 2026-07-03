@@ -1,15 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import LogoutButton from "@/components/escritorio/logout-button";
-
-const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/onibus", label: "Ônibus" },
-  { href: "/motoristas", label: "Motoristas" },
-  { href: "/alertas", label: "Alertas" },
-  { href: "/configuracoes", label: "Configurações" },
-];
+import SidebarNav from "@/components/escritorio/sidebar-nav";
 
 export default async function EscritorioLayout({
   children,
@@ -31,26 +23,21 @@ export default async function EscritorioLayout({
     .eq("resolvido", false);
 
   return (
-    <div className="flex min-h-screen bg-slate-950 text-slate-100">
-      <aside className="w-56 shrink-0 border-r border-slate-800 p-4 print:hidden">
-        <div className="mb-8 text-lg font-semibold">LuckTank</div>
-        <nav className="flex flex-col gap-1">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="flex items-center justify-between rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white"
-            >
-              {item.label}
-              {item.href === "/alertas" && !!alertasPendentes && (
-                <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">
-                  {alertasPendentes}
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
-        <div className="mt-8 border-t border-slate-800 pt-4">
+    <div className="flex min-h-screen bg-navy-950 text-slate-100">
+      <aside className="flex w-64 shrink-0 flex-col border-r border-navy-800 bg-navy-900 p-4 print:hidden">
+        <div className="mb-8 flex items-center gap-3 px-1">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary-800 to-cyan-600 text-sm font-bold text-white shadow-glow-cyan">
+            LT
+          </div>
+          <div>
+            <div className="font-title text-lg font-bold leading-tight text-white">LuckTank</div>
+            <div className="text-xs text-slate-400">Controle de combustível</div>
+          </div>
+        </div>
+
+        <SidebarNav alertasPendentes={alertasPendentes ?? 0} />
+
+        <div className="mt-auto border-t border-navy-800 pt-4">
           <LogoutButton />
         </div>
       </aside>

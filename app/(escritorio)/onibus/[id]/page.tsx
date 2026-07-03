@@ -43,24 +43,24 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{veiculo.placa}</h1>
+        <h1 className="font-title text-2xl font-bold text-white">{veiculo.placa}</h1>
         {podeEditar && <VeiculoAtivoToggle id={veiculo.id} ativo={veiculo.ativo} />}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Dados do veículo</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Dados do veículo</CardTitle>
           {podeEditar ? (
             <VeiculoForm empresaId={usuario.empresa_id} veiculo={veiculo} />
           ) : (
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-slate-400">
               Você não tem permissão para editar este veículo.
             </p>
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>QR do veículo</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">QR do veículo</CardTitle>
           {/* eslint-disable-next-line @next/next/no-img-element -- vem de uma Route Handler nossa, não de storage otimizável pelo next/image */}
           <img
             src={`/api/veiculos/${veiculo.id}/qr?formato=svg`}
@@ -69,36 +69,42 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
           />
           <div className="mt-4 flex flex-col gap-2 text-sm">
             <a
-              className="text-primary-400 underline"
+              className="font-medium text-cyan-400 underline-offset-2 hover:underline"
               href={`/api/veiculos/${veiculo.id}/qr?formato=svg&baixar=1`}
             >
               Baixar SVG
             </a>
             <a
-              className="text-primary-400 underline"
+              className="font-medium text-cyan-400 underline-offset-2 hover:underline"
               href={`/api/veiculos/${veiculo.id}/qr?formato=png&baixar=1`}
             >
               Baixar PNG
             </a>
-            <Link className="text-primary-400 underline" href={`/onibus/${veiculo.id}/etiqueta`}>
+            <Link
+              className="font-medium text-cyan-400 underline-offset-2 hover:underline"
+              href={`/onibus/${veiculo.id}/etiqueta`}
+            >
               Ver etiqueta para impressão
             </Link>
           </div>
-          <p className="mt-4 text-xs text-neutral-500">
+          <p className="mt-4 text-xs text-slate-500">
             Token permanente: <code>{veiculo.qr_token}</code>
           </p>
         </Card>
       </div>
 
-      <Card className="bg-slate-900 text-slate-100">
-        <CardTitle>Histórico de abastecimentos</CardTitle>
+      <Card variant="dark">
+        <CardTitle variant="dark">Histórico de abastecimentos</CardTitle>
         {!abastecimentos?.length ? (
-          <p className="text-sm text-neutral-400">Nenhum abastecimento registrado ainda.</p>
+          <div className="flex flex-col items-center gap-1 py-6 text-center">
+            <span className="text-2xl">⛽</span>
+            <p className="text-sm text-slate-400">Nenhum abastecimento registrado ainda.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400">
+                <tr className="border-b border-navy-800 text-slate-400">
                   <th className="py-2 pr-4 font-medium">Data</th>
                   <th className="py-2 pr-4 font-medium">KM</th>
                   <th className="py-2 pr-4 font-medium">Litros</th>
@@ -108,7 +114,7 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
               </thead>
               <tbody>
                 {abastecimentos.map((a) => (
-                  <tr key={a.id} className="border-b border-slate-800/50">
+                  <tr key={a.id} className="border-b border-navy-800/50 text-slate-200">
                     <td className="py-2 pr-4">{formatarDataBr(a.data_abastecimento)}</td>
                     <td className="py-2 pr-4">{a.km_atual}</td>
                     <td className="py-2 pr-4">{a.litros} L</td>

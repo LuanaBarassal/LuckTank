@@ -49,7 +49,7 @@ export default function MotoristaForm({ motorista }: { motorista?: MotoristaExis
         onChange={(e) => setCpf(e.target.value)}
         placeholder="Somente números"
       />
-      {erro && <p className="text-sm text-red-400">{erro}</p>}
+      {erro && <p className="text-sm font-medium text-critico-400">{erro}</p>}
       <Button type="submit" disabled={enviando}>
         {enviando ? "Salvando..." : motorista ? "Salvar alterações" : "Cadastrar motorista"}
       </Button>

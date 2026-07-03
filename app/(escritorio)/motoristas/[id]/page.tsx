@@ -5,6 +5,7 @@ import MotoristaForm from "@/components/escritorio/motorista-form";
 import MotoristaAtivoToggle from "@/components/escritorio/motorista-ativo-toggle";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import { cn } from "@/lib/utils";
 
 export default async function MotoristaDetalhePage({ params }: { params: { id: string } }) {
   const usuario = await getUsuarioAtual();
@@ -58,52 +59,62 @@ export default async function MotoristaDetalhePage({ params }: { params: { id: s
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{motorista.nome}</h1>
+        <h1 className="font-title text-2xl font-bold text-white">{motorista.nome}</h1>
         {podeGerenciar && <MotoristaAtivoToggle id={motorista.id} ativo={motorista.ativo} />}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Dados do motorista</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Dados do motorista</CardTitle>
           {podeGerenciar ? (
             <MotoristaForm motorista={motorista} />
           ) : (
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-slate-400">
               Você não tem permissão para editar este motorista.
             </p>
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Estatísticas</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Estatísticas</CardTitle>
           <div className="flex flex-col gap-4">
             <div>
               <div className="text-sm text-slate-400">Abastecimentos no mês</div>
-              <div className="text-xl font-semibold">{abastecimentosNoMes.length}</div>
+              <div className="text-xl font-bold text-white">{abastecimentosNoMes.length}</div>
             </div>
             <div>
               <div className="text-sm text-slate-400">Km/L médio</div>
-              <div className="text-xl font-semibold">
+              <div className="text-xl font-bold text-white">
                 {kmLMedio != null ? kmLMedio.toFixed(2) : "—"}
               </div>
             </div>
             <div>
               <div className="text-sm text-slate-400">Alertas críticos</div>
-              <div className="text-xl font-semibold text-red-400">{alertasCriticos ?? 0}</div>
+              <div
+                className={cn(
+                  "text-xl font-bold",
+                  (alertasCriticos ?? 0) > 0 ? "text-critico-400" : "text-white"
+                )}
+              >
+                {alertasCriticos ?? 0}
+              </div>
             </div>
           </div>
         </Card>
       </div>
 
-      <Card className="bg-slate-900 text-slate-100">
-        <CardTitle>Últimos registros</CardTitle>
+      <Card variant="dark">
+        <CardTitle variant="dark">Últimos registros</CardTitle>
         {!lista.length ? (
-          <p className="text-sm text-neutral-400">Nenhum abastecimento registrado ainda.</p>
+          <div className="flex flex-col items-center gap-1 py-6 text-center">
+            <span className="text-2xl">⛽</span>
+            <p className="text-sm text-slate-400">Nenhum abastecimento registrado ainda.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-800 text-slate-400">
+                <tr className="border-b border-navy-800 text-slate-400">
                   <th className="py-2 pr-4 font-medium">Data</th>
                   <th className="py-2 pr-4 font-medium">Ônibus</th>
                   <th className="py-2 pr-4 font-medium">Litros</th>
@@ -112,7 +123,7 @@ export default async function MotoristaDetalhePage({ params }: { params: { id: s
               </thead>
               <tbody>
                 {lista.map((a) => (
-                  <tr key={a.id} className="border-b border-slate-800/50">
+                  <tr key={a.id} className="border-b border-navy-800/50 text-slate-200">
                     <td className="py-2 pr-4">{formatarDataBr(a.data_abastecimento)}</td>
                     <td className="py-2 pr-4">{mapaPlacas.get(a.veiculo_id) ?? "—"}</td>
                     <td className="py-2 pr-4">{a.litros} L</td>

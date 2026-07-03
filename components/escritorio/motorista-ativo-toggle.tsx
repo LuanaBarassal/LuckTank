@@ -30,7 +30,7 @@ export default function MotoristaAtivoToggle({ id, ativo }: { id: string; ativo:
       <Button variant={ativo ? "outline" : "secondary"} onClick={handleClick} disabled={enviando}>
         {enviando ? "Aguarde..." : ativo ? "Inativar" : "Reativar"}
       </Button>
-      {erro && <span className="text-sm text-red-400">{erro}</span>}
+      {erro && <span className="text-sm font-medium text-critico-400">{erro}</span>}
     </div>
   );
 }

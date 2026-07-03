@@ -67,6 +67,11 @@ autenticado, com permissões por papel e um motor de alertas graduado
   enquanto (o motor de fraude, que é o que mais custa caro errar em
   silêncio). Não cobre o resto do app ainda — decisão deliberada do
   hardening pós-Fase 7, não uma meta de cobertura total.
+- **Identidade visual: navy (`primary`/`navy`, `#0a1628`) + ciano (`cyan`,
+  `#00d4ff`)**, mesma paleta do LuckFrota (produto irmão) — ver "Design por
+  contexto" na seção da Fase 8 pra regra completa de onde cada tema se
+  aplica. Tipografia: Space Grotesk (`font-title`, títulos) + Plus Jakarta
+  Sans (`font-sans`, corpo), via `next/font/google` em `app/layout.tsx`.
 - **Deploy alvo**: Vercel (app) + Supabase (banco/auth/storage).
 - Motorista nunca fala direto com o Supabase client — sempre via rotas
   `/api/*` do servidor, que usam a service role e aplicam a validação de
@@ -438,6 +443,110 @@ schema desnecessária pra algo que já não faz mal nenhum sentado ali.
     coluna `luckfrotas_veiculo_id` no banco foi mantida (ver nota acima).
   - `tsc`, `lint`, `test` (21 testes) e `build` confirmados limpos depois
     de todas as mudanças.
+- ✅ **Bloco 2 — Identidade visual profissional + acabamento.**
+  Redesign completo da camada visual (nada de lógica/rota/schema tocado),
+  usando a paleta da Expresso Mundial (navy + ciano), referência de design
+  lida direto do LuckFrota (`C:\Users\User\Desktop\luckfrota`, tailwind
+  config + `index.css` + `Sidebar.jsx` + `Login.jsx`) pra manter os dois
+  produtos como "família visual" — mesma paleta exata (`#0A1628`/`#050B14`/
+  `#1a2638` navy, `#00D4FF`/`#33DDFF`/`#00A8CC` ciano) e mesma dupla
+  tipográfica (Space Grotesk + Plus Jakarta Sans).
+
+  **Regra de design por contexto (documentada aqui pra nunca se perder)**:
+  o produto tem dois públicos opostos, então NÃO leva o mesmo tema visual.
+  - **Fluxo do motorista** (`/r/[qrToken]`): tema claro, alto contraste,
+    fundo `neutral-50`, botões de 48px+. Navy/ciano só entram como acento
+    (cabeçalho compacto em gradiente navy no topo da tela, botão primário
+    navy sólido, foco em ciano) — **nunca fundo escuro dominante**.
+    Legibilidade ao sol é prioridade absoluta, não se sacrifica por
+    estética.
+  - **Escritório** (área autenticada): navy dominante de propósito —
+    sidebar `navy-900` sobre fundo `navy-950`, cards `variant="dark"`
+    (`bg-navy-900 border-navy-800`), ciano nos destaques (item de menu
+    ativo, foco, links, badges). Visual mais "tecnológico", legível em
+    desktop/tablet.
+
+  **Tokens novos em `tailwind.config.ts`**: `primary`/`navy` (mesma escala,
+  nomes diferentes — `primary` é o alias que os componentes de UI já
+  usavam, `navy` é usado explicitamente no chrome escuro do escritório para
+  deixar a intenção clara na classe), `cyan` (acento), `info`/`atencao`/
+  `critico`/`sucesso` (semânticas — nomes batem 1:1 com `NivelAlerta` de
+  `lib/validacao/regras.ts`). **Decisão de contraste**: o botão primário usa
+  navy sólido + texto branco, não ciano sólido — testei o contraste de
+  branco sobre `#00D4FF`/`#00A8CC` (~2.8:1) e não passa nem no limiar mais
+  frouxo do WCAG (3:1 pra componente de UI); navy dá ~19:1. Ciano fica
+  reservado pra foco, links, estado ativo, badges e acentos de gráfico —
+  nunca preenchimento de texto.
+
+  **Componentes de UI (`components/ui`)**: `Button` ganhou variante `ghost`
+  e prop `loading` (spinner + `aria-busy`); `secondary` corrigido (tinha
+  contraste fraco: `neutral-100`/`900` → `neutral-200` + borda + texto
+  `900`, mais reconhecível como botão). `Card`/`CardTitle` ganharam prop
+  `variant="light"|"dark"` — antes cada página do escritório repetia
+  `className="bg-slate-900 text-slate-100"` na mão, e o `CardTitle` sempre
+  saía com `text-neutral-900` (quase preto) hardcoded: como texto e fundo
+  eram praticamente a mesma cor escura, **os títulos dos cards no
+  escritório estavam ilegíveis antes deste bloco** — bug real, não só
+  estética. Também achei (mesmo motivo) empty-states em `onibus/page.tsx`
+  e `motoristas/page.tsx` usando `<Card>` sem override nenhum, ou seja,
+  cards *claros* perdidos no meio de telas escuras — inconsistência visual
+  real entre abas. `Input` trocou o foco de `primary` pra `cyan` (regra do
+  ciano-é-foco).
+
+  **Escritório**: sidebar reconstruída (`app/(escritorio)/layout.tsx` +
+  novo `components/escritorio/sidebar-nav.tsx`, Client Component — precisa
+  de `usePathname()` pra saber qual item destacar, isso não dava pra fazer
+  no Server Component original) com logo/badge da marca, item ativo em
+  ciano, badge de alertas pendentes em `critico-500`. Todas as páginas
+  (`dashboard`, `onibus`, `onibus/[id]`, `onibus/novo`, `motoristas`,
+  `motoristas/[id]`, `motoristas/novo`, `configuracoes`, `alertas`)
+  migradas de `bg-slate-900`/`border-slate-800` cru pra `Card
+  variant="dark"` + tokens `navy-*`. `GraficoBarra`: paleta de cores dos 5
+  gráficos do dashboard alinhada à marca (ciano, azul, âmbar, verde, ciano
+  claro) em vez de cores soltas sem critério. `lista-alertas.tsx`: badge de
+  nível usa `info`/`atencao`/`critico` diretamente; **crítico ganhou borda
+  lateral vermelha sólida + fundo levemente tingido** (`border-l-4
+  border-l-critico-500 bg-critico-500/5`) pra realmente saltar aos olhos —
+  antes os 3 níveis só diferiam pela cor do badge, todos do mesmo jeito
+  visualmente "quietos".
+
+  **Login** (`components/escritorio/login-form.tsx`): reconstruído como
+  painel dividido — esquerda com gradiente navy + blobs em ciano, logo,
+  headline (só em telas largas), direita com o formulário num card claro.
+  Inspirado no `Login.jsx` do LuckFrota mas sem o conteúdo de marketing
+  (depoimentos rotativos, prova social) — não faz sentido pro contexto do
+  LuckTank, que não tem usuários externos se cadastrando sozinhos.
+
+  **Fluxo do motorista**: cabeçalho ganhou uma barra compacta em gradiente
+  navy com o badge da marca (mantém o resto da tela clara — regra de
+  design por contexto); novo indicador de progresso (`PassosProgresso` em
+  `fluxo-abastecimento.tsx`) mostrando Nome → Foto → Dados, contando
+  "processando" como parte visual do passo Foto (é uma etapa transitória,
+  não uma decisão do motorista). `PassoFoto` ganhou ícone na área de
+  captura; `PassoProcessando` ganhou spinner com acento ciano + texto de
+  apoio. Avisos/erros do wizard (`passo-formulario.tsx`, `passo-foto.tsx`)
+  migrados de `amber-*`/`red-*` soltos pros tokens semânticos
+  `atencao`/`critico`.
+
+  **Acabamento**: `<title>` conferido de novo — já estava correto
+  ("LuckTank"), nada pra mudar (o "k" a mais citado no plano não existe no
+  código, confirmado também no Bloco 4 do hardening anterior). Nenhum
+  componente de debug da Fase 1 no bundle (removidos naquele bloco).
+  `app/manifest.ts`: `theme_color` trocado pra navy (`#0a1628`);
+  `background_color` mantido claro (`#f8fafc`) de propósito — quem instala
+  o PWA é o motorista, e a primeira tela dele é clara, não faria sentido
+  uma splash escura. `public/icons/icon.svg` recolorido com gradiente
+  navy→ciano. Fontes locais Geist (nunca de fato aplicadas — `globals.css`
+  tinha `font-family: Arial` sobrescrevendo tudo, um resíduo do scaffold
+  que nunca foi ligado) removidas e substituídas por Space Grotesk/Plus
+  Jakarta Sans via `next/font/google`.
+
+  **Validado**: `tsc`, `lint`, `test` (21) e `build` limpos depois de cada
+  etapa. Testado visualmente no navegador (login, dashboard, alertas,
+  wizard do motorista até o passo Foto) — confirmado: crítico salta aos
+  olhos no painel de alertas (borda + fundo vermelho vs. atenção em âmbar
+  discreto), sidebar com item ativo em ciano, progresso do wizard avançando
+  visualmente entre passos, foco em ciano nos campos de login.
 
 ## Regras invariantes (não podem quebrar)
 

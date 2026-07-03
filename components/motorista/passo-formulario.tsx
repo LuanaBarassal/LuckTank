@@ -56,7 +56,7 @@ export default function PassoFormulario({
       <h2 className="text-lg font-semibold text-neutral-900">Dados do abastecimento</h2>
 
       {aviso && (
-        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+        <p className="rounded-lg bg-atencao-50 px-3 py-2 text-sm font-medium text-atencao-700">
           {aviso}
         </p>
       )}
@@ -145,7 +145,7 @@ export default function PassoFormulario({
           id="forma_pagamento"
           value={valores.formaPagamento}
           onChange={(e) => onChange("formaPagamento", e.target.value)}
-          className="min-h-touch rounded-xl border border-neutral-300 bg-white px-4 text-base text-neutral-900 outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
+          className="min-h-touch rounded-xl border border-neutral-300 bg-white px-4 text-base text-neutral-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
         >
           <option value="">Selecione…</option>
           {FORMAS_PAGAMENTO.map((forma) => (
@@ -169,13 +169,17 @@ export default function PassoFormulario({
         placeholder="Ex: Shell, Ipiranga, Petrobras..."
       />
 
-      {erro && <p className="text-sm font-medium text-red-600">{erro}</p>}
+      {erro && (
+        <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
+          {erro}
+        </p>
+      )}
 
       <div className="flex gap-3">
         <Button variant="outline" onClick={onVoltar} disabled={enviando}>
           Voltar
         </Button>
-        <Button fullWidth disabled={!podeEnviar} onClick={onSubmit}>
+        <Button fullWidth disabled={!podeEnviar} loading={enviando} onClick={onSubmit}>
           {enviando ? "Enviando..." : "Confirmar abastecimento"}
         </Button>
       </div>

@@ -16,33 +16,35 @@ export default async function ConfiguracoesPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Configurações</h1>
+      <h1 className="font-title text-2xl font-bold text-white">Configurações</h1>
 
-      <Card className="max-w-2xl bg-slate-900 text-slate-100">
-        <CardTitle>Usuários do escritório</CardTitle>
+      <Card variant="dark" className="max-w-2xl">
+        <CardTitle variant="dark">Usuários do escritório</CardTitle>
         <div className="flex flex-col gap-2 text-sm">
           {usuarios?.map((u) => (
             <div
               key={u.id}
-              className="flex items-center justify-between border-b border-slate-800 py-2 last:border-0"
+              className="flex items-center justify-between border-b border-navy-800 py-2 last:border-0"
             >
               <div>
-                <div className="font-medium">{u.nome}</div>
+                <div className="font-medium text-white">{u.nome}</div>
                 <div className="text-slate-400">{u.email}</div>
               </div>
-              <span className="rounded-full bg-slate-800 px-2 py-1 text-xs">{u.papel}</span>
+              <span className="rounded-full bg-navy-800 px-2 py-1 text-xs font-medium text-cyan-300">
+                {u.papel}
+              </span>
             </div>
           ))}
         </div>
       </Card>
 
       {usuario.papel === "administrador" ? (
-        <Card className="max-w-md bg-slate-900 text-slate-100">
-          <CardTitle>Convidar usuário</CardTitle>
+        <Card variant="dark" className="max-w-md">
+          <CardTitle variant="dark">Convidar usuário</CardTitle>
           <ConvidarUsuarioForm />
         </Card>
       ) : (
-        <p className="text-sm text-neutral-400">
+        <p className="text-sm text-slate-400">
           Só administradores podem convidar novos usuários.
         </p>
       )}

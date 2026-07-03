@@ -18,7 +18,7 @@ export default async function MotoristasPage() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Motoristas</h1>
+        <h1 className="font-title text-2xl font-bold text-white">Motoristas</h1>
         {podeCadastrar && (
           <Link href="/motoristas/novo">
             <Button>Novo motorista</Button>
@@ -27,24 +27,27 @@ export default async function MotoristasPage() {
       </div>
 
       {!motoristas?.length && (
-        <Card>
-          <p className="text-sm text-neutral-400">Nenhum motorista cadastrado ainda.</p>
+        <Card variant="dark">
+          <div className="flex flex-col items-center gap-1 py-6 text-center">
+            <span className="text-2xl">🧑‍✈️</span>
+            <p className="text-sm text-slate-400">Nenhum motorista cadastrado ainda.</p>
+          </div>
         </Card>
       )}
 
       <div className="flex flex-col gap-3">
         {motoristas?.map((motorista) => (
           <Link key={motorista.id} href={`/motoristas/${motorista.id}`}>
-            <Card className="flex items-center justify-between bg-slate-900 text-slate-100 hover:border-primary-600">
+            <Card variant="dark" className="flex items-center justify-between transition hover:border-cyan-600">
               <div>
-                <div className="font-semibold">{motorista.nome}</div>
+                <div className="font-semibold text-white">{motorista.nome}</div>
                 {motorista.cpf && <div className="text-sm text-slate-400">CPF: {motorista.cpf}</div>}
               </div>
               <span
                 className={
                   motorista.ativo
-                    ? "rounded-full bg-primary-900 px-2 py-1 text-xs text-primary-300"
-                    : "rounded-full bg-neutral-700 px-2 py-1 text-xs text-neutral-300"
+                    ? "rounded-full bg-sucesso-500/15 px-2 py-1 text-xs font-medium text-sucesso-400"
+                    : "rounded-full bg-navy-800 px-2 py-1 text-xs font-medium text-slate-400"
                 }
               >
                 {motorista.ativo ? "Ativo" : "Inativo"}

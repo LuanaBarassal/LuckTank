@@ -323,23 +323,35 @@ export default function FluxoAbastecimento({
   }
 
   return (
-    <main className="min-h-screen bg-neutral-50 p-4">
+    <main className="min-h-screen bg-neutral-50 pb-8">
       <div className="mx-auto flex max-w-md flex-col gap-4">
-        <header className="text-center">
-          <p className="text-sm font-medium uppercase tracking-wide text-primary-700">
-            {empresaNome}
-          </p>
-          <h1 className="text-2xl font-bold text-neutral-900">{veiculo.placa}</h1>
-          <p className="text-sm text-neutral-500">
+        <header className="flex flex-col items-center gap-1 rounded-b-3xl bg-gradient-to-br from-primary-800 to-primary-900 px-4 pb-5 pt-6 text-center shadow-sm">
+          <div className="mb-1 flex items-center gap-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-cyan-600 text-xs font-bold text-navy-950">
+              LT
+            </span>
+            <span className="text-sm font-semibold uppercase tracking-wide text-cyan-300">
+              {empresaNome}
+            </span>
+          </div>
+          <h1 className="font-title text-2xl font-bold text-white">{veiculo.placa}</h1>
+          <p className="text-sm text-slate-300">
             {[veiculo.modelo, veiculo.ano].filter(Boolean).join(" · ")}
           </p>
-          <p className="mt-1 text-xs text-neutral-400">
+          <p className="mt-1 text-xs text-slate-400">
             {ultimoAbastecimento
               ? `Último abastecimento: ${ultimoAbastecimento.data_abastecimento} · ${ultimoAbastecimento.km_atual} km · ${ultimoAbastecimento.litros} L`
               : "Nenhum abastecimento registrado ainda."}
           </p>
         </header>
 
+        {passo !== "sucesso" && (
+          <div className="px-4">
+            <PassosProgresso passoAtual={passo} />
+          </div>
+        )}
+
+        <div className="px-4">
         <Card>
           {passo === "nome" && (
             <PassoNome
@@ -386,7 +398,47 @@ export default function FluxoAbastecimento({
             <PassoSucesso offline={salvoOffline} onNovoRegistro={reiniciar} />
           )}
         </Card>
+        </div>
       </div>
     </main>
+  );
+}
+
+const PASSOS_VISIVEIS: { chave: Passo[]; label: string }[] = [
+  { chave: ["nome"], label: "Nome" },
+  { chave: ["foto", "processando"], label: "Foto" },
+  { chave: ["formulario"], label: "Dados" },
+];
+
+// Indicador simples de progresso do wizard — "processando" conta como parte
+// do passo "Foto" (é uma etapa transitória, não uma decisão do motorista).
+function PassosProgresso({ passoAtual }: { passoAtual: Passo }) {
+  const indiceAtual = PASSOS_VISIVEIS.findIndex((p) => p.chave.includes(passoAtual));
+
+  return (
+    <div className="flex items-center gap-2">
+      {PASSOS_VISIVEIS.map((p, indice) => {
+        const concluido = indice < indiceAtual;
+        const ativo = indice === indiceAtual;
+        return (
+          <div key={p.label} className="flex flex-1 items-center gap-2">
+            <div className="flex flex-1 flex-col items-center gap-1">
+              <div
+                className={`h-1.5 w-full rounded-full ${
+                  concluido || ativo ? "bg-primary-700" : "bg-neutral-200"
+                }`}
+              />
+              <span
+                className={`text-xs font-medium ${
+                  ativo ? "text-primary-800" : concluido ? "text-neutral-500" : "text-neutral-400"
+                }`}
+              >
+                {p.label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }

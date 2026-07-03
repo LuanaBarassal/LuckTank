@@ -106,14 +106,14 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
       />
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-neutral-300" htmlFor="tipo_combustivel">
+        <label className="text-sm font-medium text-slate-300" htmlFor="tipo_combustivel">
           Tipo de combustível
         </label>
         <select
           id="tipo_combustivel"
           value={tipoCombustivel ?? ""}
           onChange={(e) => setTipoCombustivel(e.target.value)}
-          className="min-h-touch rounded-xl border border-neutral-700 bg-neutral-900 px-4 text-base text-white outline-none focus:border-primary-500"
+          className="min-h-touch rounded-xl border border-navy-700 bg-navy-800 px-4 text-base text-white outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
         >
           <option value="">Selecione…</option>
           {TIPOS_COMBUSTIVEL.map((tipo) => (
@@ -125,7 +125,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-neutral-300" htmlFor="foto">
+        <label className="text-sm font-medium text-slate-300" htmlFor="foto">
           Foto (opcional)
         </label>
         <input
@@ -133,7 +133,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
           type="file"
           accept="image/*"
           onChange={handleFotoChange}
-          className="text-sm text-neutral-300"
+          className="text-sm text-slate-300"
         />
         {fotoUrlAtual && !fotoFile && (
           // eslint-disable-next-line @next/next/no-img-element -- vem do Storage, não precisa de next/image
@@ -145,7 +145,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
         )}
       </div>
 
-      {erro && <p className="text-sm text-red-400">{erro}</p>}
+      {erro && <p className="text-sm font-medium text-critico-400">{erro}</p>}
 
       <Button type="submit" disabled={enviando}>
         {enviando ? "Salvando..." : veiculo ? "Salvar alterações" : "Cadastrar veículo"}

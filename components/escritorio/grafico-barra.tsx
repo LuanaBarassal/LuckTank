@@ -16,17 +16,17 @@ export default function GraficoBarra({
   dados,
   chaveX,
   chaveY,
-  corBarra = "#16a34a",
+  corBarra = "#00d4ff",
   formatarY,
 }: Props) {
   return (
     <ResponsiveContainer width="100%" height={240}>
       <BarChart data={dados} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-        <XAxis dataKey={chaveX} stroke="#94a3b8" fontSize={12} />
-        <YAxis stroke="#94a3b8" fontSize={12} tickFormatter={formatarY} width={48} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#152c42" />
+        <XAxis dataKey={chaveX} stroke="#8098be" fontSize={12} />
+        <YAxis stroke="#8098be" fontSize={12} tickFormatter={formatarY} width={48} />
         <Tooltip
-          contentStyle={{ background: "#0f172a", border: "1px solid #1e293b", borderRadius: 8 }}
+          contentStyle={{ background: "#070f1c", border: "1px solid #152c42", borderRadius: 8 }}
           labelStyle={{ color: "#e2e8f0" }}
           itemStyle={{ color: corBarra }}
         />

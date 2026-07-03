@@ -48,14 +48,14 @@ export default function ConvidarUsuarioForm() {
         required
       />
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-neutral-300" htmlFor="papel">
+        <label className="text-sm font-medium text-slate-300" htmlFor="papel">
           Papel
         </label>
         <select
           id="papel"
           value={papel}
           onChange={(e) => setPapel(e.target.value)}
-          className="min-h-touch rounded-xl border border-neutral-700 bg-neutral-900 px-4 text-base text-white outline-none focus:border-primary-500"
+          className="min-h-touch rounded-xl border border-navy-700 bg-navy-800 px-4 text-base text-white outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
         >
           {PAPEIS.map((p) => (
             <option key={p} value={p}>
@@ -64,8 +64,8 @@ export default function ConvidarUsuarioForm() {
           ))}
         </select>
       </div>
-      {erro && <p className="text-sm text-red-400">{erro}</p>}
-      {sucesso && <p className="text-sm text-primary-400">Convite enviado.</p>}
+      {erro && <p className="text-sm font-medium text-critico-400">{erro}</p>}
+      {sucesso && <p className="text-sm font-medium text-sucesso-400">Convite enviado.</p>}
       <Button type="submit" disabled={enviando}>
         {enviando ? "Enviando..." : "Convidar"}
       </Button>

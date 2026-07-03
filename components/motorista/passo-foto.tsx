@@ -32,7 +32,7 @@ export default function PassoFoto({
       </p>
 
       {mensagemErro && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+        <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
           {mensagemErro}
         </p>
       )}
@@ -57,9 +57,12 @@ export default function PassoFoto({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="flex min-h-[200px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500"
+          className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition active:bg-neutral-50"
         >
-          Toque para abrir a câmera
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-50 text-3xl">
+            📷
+          </span>
+          <span className="font-medium">Toque para abrir a câmera</span>
         </button>
       )}
 

@@ -14,7 +14,12 @@ import {
 const JANELA_DIAS = 90;
 
 function SemDados() {
-  return <p className="text-sm text-neutral-500">Sem dados suficientes ainda.</p>;
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
+      <span className="text-2xl">📊</span>
+      <p className="text-sm text-slate-400">Sem dados suficientes ainda.</p>
+    </div>
+  );
 }
 
 export default async function DashboardPage() {
@@ -72,65 +77,65 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-8">
       <div>
-        <h1 className="mb-6 text-2xl font-semibold">Dashboard</h1>
+        <h1 className="mb-6 font-title text-2xl font-bold text-white">Dashboard</h1>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {RESUMO.map((item) => (
-            <div key={item.label} className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+            <div key={item.label} className="rounded-2xl border border-navy-800 bg-navy-900 p-5 shadow-sm">
               <div className="text-sm text-slate-400">{item.label}</div>
-              <div className="mt-2 text-2xl font-semibold">{item.valor}</div>
+              <div className="mt-2 text-2xl font-bold text-white">{item.valor}</div>
             </div>
           ))}
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Gasto por dia (últimos {JANELA_DIAS} dias)</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Gasto por dia (últimos {JANELA_DIAS} dias)</CardTitle>
           {gastoPorDia.length ? (
-            <GraficoBarra dados={gastoPorDia} chaveX="data" chaveY="valor" />
+            <GraficoBarra dados={gastoPorDia} chaveX="data" chaveY="valor" corBarra="#00d4ff" />
           ) : (
             <SemDados />
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Preço médio por litro</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Preço médio por litro</CardTitle>
           {precoMedioPorDia.length ? (
-            <GraficoBarra dados={precoMedioPorDia} chaveX="data" chaveY="precoMedio" corBarra="#3b82f6" />
+            <GraficoBarra dados={precoMedioPorDia} chaveX="data" chaveY="precoMedio" corBarra="#60a5fa" />
           ) : (
             <SemDados />
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Consumo médio por ônibus (km/L)</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Consumo médio por ônibus (km/L)</CardTitle>
           {consumoPorVeiculo.length ? (
-            <GraficoBarra dados={consumoPorVeiculo} chaveX="nome" chaveY="consumoMedio" corBarra="#f59e0b" />
+            <GraficoBarra dados={consumoPorVeiculo} chaveX="nome" chaveY="consumoMedio" corBarra="#fbbf24" />
           ) : (
             <SemDados />
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100">
-          <CardTitle>Consumo médio por motorista (km/L)</CardTitle>
+        <Card variant="dark">
+          <CardTitle variant="dark">Consumo médio por motorista (km/L)</CardTitle>
           {consumoPorMotorista.length ? (
-            <GraficoBarra dados={consumoPorMotorista} chaveX="nome" chaveY="consumoMedio" corBarra="#a855f7" />
+            <GraficoBarra dados={consumoPorMotorista} chaveX="nome" chaveY="consumoMedio" corBarra="#34d399" />
           ) : (
             <SemDados />
           )}
         </Card>
 
-        <Card className="bg-slate-900 text-slate-100 lg:col-span-2">
-          <CardTitle>Postos mais utilizados</CardTitle>
+        <Card variant="dark" className="lg:col-span-2">
+          <CardTitle variant="dark">Postos mais utilizados</CardTitle>
           {postosUtilizados.length ? (
-            <GraficoBarra dados={postosUtilizados} chaveX="posto" chaveY="quantidade" corBarra="#22d3ee" />
+            <GraficoBarra dados={postosUtilizados} chaveX="posto" chaveY="quantidade" corBarra="#33ddff" />
           ) : (
             <SemDados />
           )}
         </Card>
       </div>
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-slate-500">
         Mapa dos abastecimentos: pendente — depende de geolocalização, que não
         é capturada hoje (corte de escopo deliberado). Ver PROJETO.md.
       </p>

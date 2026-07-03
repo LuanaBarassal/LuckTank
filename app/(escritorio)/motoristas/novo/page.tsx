@@ -9,8 +9,8 @@ export default async function NovoMotoristaPage() {
   if (usuario.papel !== "gerente" && usuario.papel !== "administrador") {
     return (
       <div>
-        <h1 className="mb-2 text-2xl font-semibold">Novo motorista</h1>
-        <p className="text-sm text-red-400">
+        <h1 className="mb-2 font-title text-2xl font-bold text-white">Novo motorista</h1>
+        <p className="text-sm font-medium text-critico-400">
           Só gerente ou administrador podem cadastrar motoristas.
         </p>
       </div>
@@ -19,7 +19,7 @@ export default async function NovoMotoristaPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-semibold">Novo motorista</h1>
+      <h1 className="mb-6 font-title text-2xl font-bold text-white">Novo motorista</h1>
       <MotoristaForm />
     </div>
   );
