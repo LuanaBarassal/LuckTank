@@ -40,12 +40,15 @@ autenticado, com permissões por papel e um motor de alertas graduado
   — 4 regras puras (recebem contexto já resolvido, sem query dentro):
   capacidade do tanque, nota fiscal duplicada, foto duplicada (hash SHA-256
   do arquivo, coluna `midias.hash_sha256`), consumo fora da faixa histórica
-  do veículo, litros desproporcionais ao KM rodado. O bloqueio de KM menor
-  é separado (invariante #6, roda antes do insert). Rodam em
-  `/api/abastecimentos` logo depois do insert, nunca derrubam a resposta de
-  sucesso se falharem (try/catch silencioso — alerta é bônus informativo).
-  Nada de preço regional/ANP, geolocalização ou EXIF por enquanto — escopo
-  enxuto, cortado deliberadamente.
+  do veículo, litros desproporcionais ao KM rodado, foto antiga/reaproveitada
+  (EXIF `DateTimeOriginal` vs. data informada — ver "Melhorias de uso, Bloco
+  2"). O bloqueio de KM menor é separado (invariante #6, roda antes do
+  insert). Rodam em `/api/abastecimentos` logo depois do insert, nunca
+  derrubam a resposta de sucesso se falharem (try/catch silencioso — alerta
+  é bônus informativo). **EXIF deixou de ser cortado do escopo** (era
+  verdade até o Bloco 2 das melhorias de uso, quando a galeria foi liberada
+  no fluxo do motorista — ver seção própria); preço regional/ANP e
+  geolocalização como regra de negócio continuam fora do escopo.
 - **PWA**: manifest (`app/manifest.ts`) + service worker mínimo
   (`public/sw.js`, só registra em produção). Fila offline (IndexedDB via
   `idb`) + sincronização por retry (sem Background Sync API — iOS Safari
@@ -862,6 +865,99 @@ vez, com validação própria.
   teste dedicado (placa `TST...`) usado na validação automatizada pós-Fase
   8, que foi limpo por completo. Não apaguei nada — é uma decisão do dono do
   produto, não algo pra um agente decidir sozinho.
+
+- ✅ **Bloco 2 — Galeria na captura + EXIF como camada de alerta anti-fraude.**
+  **Correção de premissa registrada no Bloco 1 (confirmada aqui)**: até este
+  bloco, EXIF nunca tinha sido implementado — as colunas `midias.exif_gps`/
+  `midias.exif_timestamp` já existiam desde a `0001_init.sql` (ponto de
+  extensão futura), mas nada as lia ou escrevia. **Isso deixou de ser
+  verdade**: liberar a galeria abre uma porta real pra reaproveitar um
+  comprovante antigo, e o EXIF é a defesa que fecha essa porta — por isso os
+  dois entraram juntos, não em blocos separados. Nenhuma migration nova foi
+  necessária (as colunas já existiam).
+
+  **Galeria + câmera** (`components/motorista/passo-foto.tsx`): dois botões
+  lado a lado — "Tirar foto" (`capture="environment"`, força a câmera
+  traseira) e "Escolher da galeria" (mesmo `<input type="file">`, sem
+  `capture`, abre o seletor do sistema). Os dois alimentam o mesmo
+  `handleFotoChange` — não há nenhum código diferente por origem, então a
+  compressão (`comprimirImagem`), a validação de tipo/tamanho
+  (`validarFoto`) e o hash de duplicata (SHA-256) já valiam igual pros dois
+  caminhos antes mesmo deste bloco, por construção.
+
+  **Achado que motivou o desenho do EXIF**: a foto que vai pro Storage
+  sempre passa por `comprimirImagem()` (canvas: `createImageBitmap` +
+  `drawImage` + `toBlob`), e recodificar via canvas **apaga todo o EXIF**.
+  Ou seja, se o servidor só lesse o campo `foto` (like já fazia), o EXIF
+  read seria sempre `null` no caminho online — a leitura problema teria que
+  vir de outro lugar. Solução: o client agora também envia
+  `foto_exif`, um recorte (`File.slice(0, 128KB)`, corte puro, **sem**
+  recodificar) só do **início** do arquivo original — é onde o EXIF de um
+  JPEG mora (marcador APP1, logo após o SOI). Isso preserva os bytes EXIF
+  originais, escritos pela câmera/app de galeria, sem reenviar a foto
+  inteira (que arriscaria estourar o limite de payload de function
+  serverless da Vercel se o original tiver vários MB). Aplicado nos dois
+  caminhos de envio: submit online (`fluxo-abastecimento.tsx`) e fila
+  offline (`lib/offline/db.ts` ganhou o campo `fotoExifHeaderBlob`,
+  `lib/offline/sync.ts` reenvia como `foto_exif`) — como é só um recorte de
+  ~128KB (não o arquivo inteiro), o custo de guardar isso a mais no
+  IndexedDB é desprezível.
+
+  **Leitura no servidor** (`lib/exif.ts`, `server-only`, usa `exifr` — já
+  era dependência do projeto, nunca usada até agora): `extrairExifFoto(buffer)`
+  lê `DateTimeOriginal` e `GPSLatitude`/`GPSLongitude`, nunca lança (foto sem
+  EXIF, corrompida ou formato sem suporte é sempre `{ timestamp: null, gps:
+  null }`, nunca um erro). `/api/abastecimentos` prefere `foto_exif`; sem
+  esse campo (ex.: caminho antigo/defensivo), cai pro fallback de tentar ler
+  do próprio `foto` (que normalmente não terá metadado, mas não custa
+  tentar). `exif_timestamp`/`exif_gps` gravados em `midias` junto da foto.
+  **GPS é só armazenado, não usado em nenhuma regra ainda** — não existe
+  hoje uma baseline de localização (garagem, posto habitual) pra comparar;
+  fica pronto pra quando/se isso entrar de escopo.
+
+  **Nova regra em `lib/validacao/regras.ts`**: `avaliarFotoAntigaOuReaproveitada`
+  — dispara nível **atenção** (não crítico: EXIF é sinal de suspeita, não
+  prova; câmera com relógio errado ou fuso diferente pode gerar falso
+  positivo, então o nível mais brando é proposital) quando o
+  `DateTimeOriginal` é **mais de 48h anterior** ao fim do dia
+  (`data_abastecimento` informado). **Nunca dispara**: (a) quando não há
+  EXIF (`fotoExifTimestamp: null` — o caso normal pra print, WhatsApp, PNG,
+  ou qualquer app de galeria que remove metadado ao compartilhar); (b)
+  quando o timestamp é malformado (trata como ausente, não quebra); (c)
+  quando a foto foi tirada **depois** da data informada — registrar um
+  abastecimento atrasado (foto tirada hoje, data informada de ontem) é fluxo
+  legítimo e comum, não fraude, então só o sentido "foto mais antiga que o
+  informado" conta. `ContextoAvaliacao` ganhou dois campos
+  (`abastecimento.dataAbastecimento`, `fotoExifTimestamp`) — `contextoBase()`
+  em `regras.test.ts` atualizado, mais 6 testes novos (EXIF ausente, EXIF
+  coerente, dentro da tolerância de 48h, EXIF bem mais antigo — dispara,
+  foto tirada depois da data informada — não dispara, timestamp malformado
+  — não lança). Rótulo novo em `components/escritorio/lista-alertas.tsx`
+  ("Foto do comprovante mais antiga que o esperado").
+
+  **Validado com 50 testes automatizados** (6 novos) e **contra o endpoint
+  real** (`/api/abastecimentos`, servidor de desenvolvimento local, veículo
+  de teste dedicado `TSTEXIF1`, removido por completo ao final — mesmo
+  padrão da validação pós-Fase 8): JPEG artesanal com EXIF de ~6 meses atrás
+  → alerta `foto_antiga_ou_reaproveitada` (atenção, `horas_de_diferenca:
+  4403`); mesmo JPEG com EXIF do próprio dia → nenhum alerta; PNG sem EXIF →
+  nenhum alerta, registro passa limpo; reenvio dos MESMOS bytes de foto
+  (simulando escolher de novo a mesma imagem da galeria) → **as duas
+  regras disparam juntas** (`foto_comprovante_duplicada` E
+  `foto_antiga_ou_reaproveitada`), confirmando que o hash de duplicata
+  continua ativo e que as duas camadas são complementares, não mutuamente
+  exclusivas (mesmo padrão de outras combinações já documentadas em
+  `regras.ts`). **UI confirmada visualmente no navegador**: o passo de foto
+  do wizard mostra os dois botões lado a lado ("Tirar foto" / "Escolher da
+  galeria") no veículo de teste; não foi possível automatizar o clique no
+  seletor de arquivo nativo do sistema a partir desta sessão (a ferramenta
+  de automação de navegador bloqueia isso por design), então a escolha real
+  de um arquivo da galeria não foi clicada ao vivo — mas o código por trás
+  do botão é comprovadamente idêntico ao da câmera (mesmo `handleFotoChange`,
+  sem ramificação por origem), e o pipeline do servidor que processa
+  qualquer `File` recebido (compressão, hash, EXIF) foi validado
+  end-to-end via chamada direta ao endpoint. `tsc`, `lint`, `test` (50) e
+  `build` confirmados limpos.
 
 ## Regras invariantes (não podem quebrar)
 

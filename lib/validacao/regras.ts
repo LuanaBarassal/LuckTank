@@ -19,6 +19,9 @@ export interface ContextoAvaliacao {
     kmRodado: number | null;
     consumoKml: number | null;
     numeroNota: string | null;
+    // "YYYY-MM-DD" — usado só pela regra de EXIF, pra comparar com o
+    // timestamp da foto.
+    dataAbastecimento: string;
   };
   veiculo: {
     capacidadeTanqueLitros: number | null;
@@ -29,6 +32,10 @@ export interface ContextoAvaliacao {
   // Média de consumo dos últimos abastecimentos ativos do veículo, excluindo
   // o atual — null se não houver histórico suficiente pra comparar.
   consumoMedioHistorico: number | null;
+  // DateTimeOriginal do EXIF da foto (ISO 8601), lido no servidor
+  // (lib/exif.ts) — null sempre que a foto não tiver metadado (print,
+  // WhatsApp, PNG, etc.). Ausência NUNCA gera alerta: é o caso normal.
+  fotoExifTimestamp: string | null;
 }
 
 // Parâmetros ajustáveis das heurísticas — nenhum deles veio de teste
@@ -111,6 +118,43 @@ function avaliarLitrosDesproporcionais(ctx: ContextoAvaliacao): AlertaGerado | n
   };
 }
 
+// Tolerância pra regra de EXIF — foto tirada mais de 48h ANTES da data
+// informada do abastecimento é suspeita de reaproveitamento (galeria antiga,
+// comprovante de outro dia). Não penaliza foto tirada DEPOIS da data
+// informada: registrar um abastecimento atrasado (foto tirada hoje, data
+// informada de ontem) é um fluxo legítimo e comum, não fraude.
+const TOLERANCIA_HORAS_FOTO_ANTIGA = 48;
+
+// Camada de SUSPEITA, não de bloqueio (ver lib/exif.ts): ausência de EXIF
+// (print, WhatsApp, PNG, galeria que apaga metadado) nunca gera alerta — só
+// dispara quando HÁ metadado e ele diverge demais da data informada.
+function avaliarFotoAntigaOuReaproveitada(ctx: ContextoAvaliacao): AlertaGerado | null {
+  const { fotoExifTimestamp } = ctx;
+  if (!fotoExifTimestamp) return null;
+
+  const dataFoto = new Date(fotoExifTimestamp);
+  if (Number.isNaN(dataFoto.getTime())) return null;
+
+  // Fim do dia informado (23:59:59 UTC) — margem generosa que evita falso
+  // positivo por causa só de fuso horário entre o relógio da câmera e o
+  // horário do servidor.
+  const dataInformada = new Date(`${ctx.abastecimento.dataAbastecimento}T23:59:59.000Z`);
+  if (Number.isNaN(dataInformada.getTime())) return null;
+
+  const horasDeDiferenca = (dataInformada.getTime() - dataFoto.getTime()) / (1000 * 60 * 60);
+  if (horasDeDiferenca <= TOLERANCIA_HORAS_FOTO_ANTIGA) return null;
+
+  return {
+    tipoRegra: "foto_antiga_ou_reaproveitada",
+    nivel: "atencao",
+    detalhes: {
+      exif_timestamp: fotoExifTimestamp,
+      data_abastecimento: ctx.abastecimento.dataAbastecimento,
+      horas_de_diferenca: Number(horasDeDiferenca.toFixed(1)),
+    },
+  };
+}
+
 export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
   return [
     avaliarCapacidadeTanque(ctx),
@@ -118,6 +162,7 @@ export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
     avaliarFotoDuplicada(ctx),
     avaliarConsumoForaDaFaixa(ctx),
     avaliarLitrosDesproporcionais(ctx),
+    avaliarFotoAntigaOuReaproveitada(ctx),
   ].filter((alerta): alerta is AlertaGerado => alerta !== null);
 }
 

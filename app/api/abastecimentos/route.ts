@@ -8,6 +8,7 @@ import {
   type ContextoAvaliacao,
 } from "@/lib/validacao/regras";
 import { validarFoto } from "@/lib/validacao/arquivo";
+import { extrairExifFoto } from "@/lib/exif";
 import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
 import type { Json } from "@/types/database";
 
@@ -111,6 +112,8 @@ export async function POST(request: NextRequest) {
 
   let fotoUrl: string | null = null;
   let fotoHash: string | null = null;
+  let exifTimestamp: string | null = null;
+  let exifGps: { lat: number; lon: number } | null = null;
   const foto = formData.get("foto");
 
   if (foto instanceof File && foto.size > 0) {
@@ -122,6 +125,22 @@ export async function POST(request: NextRequest) {
     }
 
     fotoHash = createHash("sha256").update(buffer).digest("hex");
+
+    // A foto que vai pro Storage já chega comprimida pelo client (canvas),
+    // o que apaga todo o EXIF — por isso o client manda também só o
+    // "cabeçalho" do arquivo ORIGINAL (poucos KB, sem recodificar, onde o
+    // EXIF de um JPEG mora), usado exclusivamente pra esta leitura e nunca
+    // salvo em Storage. Sem esse campo (ex.: reenvio da fila offline), cai
+    // no fallback de tentar ler do próprio `foto` — normalmente sem
+    // metadado, mas não custa nada tentar.
+    const fotoExifCampo = formData.get("foto_exif");
+    const bufferParaExif =
+      fotoExifCampo instanceof File && fotoExifCampo.size > 0
+        ? Buffer.from(await fotoExifCampo.arrayBuffer())
+        : buffer;
+    const exif = await extrairExifFoto(bufferParaExif);
+    exifTimestamp = exif.timestamp;
+    exifGps = exif.gps;
 
     const caminho = `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}-${foto.name}`;
     const { error: uploadError } = await admin.storage
@@ -196,13 +215,22 @@ export async function POST(request: NextRequest) {
       url: fotoUrl,
       tipo: "foto_comprovante",
       hash_sha256: fotoHash,
+      exif_timestamp: exifTimestamp,
+      exif_gps: exifGps as Json,
     });
   }
 
   // Alerta é bônus informativo pro escritório — nunca deve derrubar a
   // resposta de sucesso do registro principal, que já foi gravado.
   try {
-    await avaliarEGravarAlertas({ admin, veiculo, abastecimento, fotoHash });
+    await avaliarEGravarAlertas({
+      admin,
+      veiculo,
+      abastecimento,
+      fotoHash,
+      dataAbastecimento: parsed.data.data_abastecimento,
+      exifTimestamp,
+    });
   } catch (erro) {
     console.error("Falha ao avaliar alertas do abastecimento:", erro);
   }
@@ -225,8 +253,10 @@ async function avaliarEGravarAlertas(params: {
     numero_nota: string | null;
   };
   fotoHash: string | null;
+  dataAbastecimento: string;
+  exifTimestamp: string | null;
 }) {
-  const { admin, veiculo, abastecimento, fotoHash } = params;
+  const { admin, veiculo, abastecimento, fotoHash, dataAbastecimento, exifTimestamp } = params;
 
   let notaDuplicada = false;
   if (abastecimento.numero_nota) {
@@ -287,6 +317,7 @@ async function avaliarEGravarAlertas(params: {
       kmRodado: abastecimento.km_rodado,
       consumoKml: abastecimento.consumo_kml,
       numeroNota: abastecimento.numero_nota,
+      dataAbastecimento,
     },
     veiculo: {
       capacidadeTanqueLitros: veiculo.capacidade_tanque_litros,
@@ -294,6 +325,7 @@ async function avaliarEGravarAlertas(params: {
     notaDuplicada,
     fotoDuplicada,
     consumoMedioHistorico,
+    fotoExifTimestamp: exifTimestamp,
   };
 
   const alertas = avaliarAbastecimento(contexto);

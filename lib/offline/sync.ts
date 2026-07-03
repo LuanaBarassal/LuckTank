@@ -10,6 +10,9 @@ function construirFormData(item: ItemFila): FormData {
   if (item.fotoBlob) {
     formData.set("foto", item.fotoBlob, item.fotoNome ?? "comprovante.jpg");
   }
+  if (item.fotoExifHeaderBlob) {
+    formData.set("foto_exif", item.fotoExifHeaderBlob, item.fotoNome ?? "comprovante.jpg");
+  }
   return formData;
 }
 

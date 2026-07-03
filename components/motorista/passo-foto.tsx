@@ -18,17 +18,21 @@ export default function PassoFoto({
   onVoltar,
   onContinuar,
 }: Props) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputCameraRef = useRef<HTMLInputElement>(null);
+  const inputGaleriaRef = useRef<HTMLInputElement>(null);
 
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     onFotoChange(event.target.files?.[0] ?? null);
+    // Limpa o valor pra permitir escolher o mesmo arquivo de novo (ex.:
+    // "tirar outra foto" e o celular reusar o mesmo nome de arquivo).
+    event.target.value = "";
   }
 
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold text-neutral-900">Foto do comprovante</h2>
       <p className="text-sm text-neutral-500">
-        Tire uma foto legível do cupom/nota do abastecimento.
+        Tire uma foto legível do cupom/nota do abastecimento, ou escolha uma da galeria.
       </p>
 
       {mensagemErro && (
@@ -37,11 +41,21 @@ export default function PassoFoto({
         </p>
       )}
 
+      {/* Dois inputs separados: `capture="environment"` força a câmera
+          traseira; o segundo, sem `capture`, abre o seletor de arquivos/
+          galeria do sistema. */}
       <input
-        ref={inputRef}
+        ref={inputCameraRef}
         type="file"
         accept="image/*"
         capture="environment"
+        className="hidden"
+        onChange={handleChange}
+      />
+      <input
+        ref={inputGaleriaRef}
+        type="file"
+        accept="image/*"
         className="hidden"
         onChange={handleChange}
       />
@@ -54,22 +68,39 @@ export default function PassoFoto({
           className="max-h-80 w-full rounded-xl border border-neutral-200 object-contain"
         />
       ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition active:bg-neutral-50"
-        >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-50 text-3xl">
-            📷
-          </span>
-          <span className="font-medium">Toque para abrir a câmera</span>
-        </button>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => inputCameraRef.current?.click()}
+            className="flex min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition active:bg-neutral-50"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-50 text-3xl">
+              📷
+            </span>
+            <span className="text-center font-medium">Tirar foto</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => inputGaleriaRef.current?.click()}
+            className="flex min-h-[160px] flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 transition active:bg-neutral-50"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary-50 text-3xl">
+              🖼️
+            </span>
+            <span className="text-center font-medium">Escolher da galeria</span>
+          </button>
+        </div>
       )}
 
       {preview && (
-        <Button variant="secondary" fullWidth onClick={() => inputRef.current?.click()}>
-          Tirar outra foto
-        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="secondary" fullWidth onClick={() => inputCameraRef.current?.click()}>
+            Tirar outra foto
+          </Button>
+          <Button variant="secondary" fullWidth onClick={() => inputGaleriaRef.current?.click()}>
+            Escolher outra
+          </Button>
+        </div>
       )}
 
       <div className="flex gap-3">

@@ -18,6 +18,7 @@ function contextoBase(): ContextoAvaliacao {
       kmRodado: 500,
       consumoKml: 5,
       numeroNota: "123",
+      dataAbastecimento: "2026-07-03",
     },
     veiculo: {
       capacidadeTanqueLitros: 300,
@@ -25,6 +26,7 @@ function contextoBase(): ContextoAvaliacao {
     notaDuplicada: false,
     fotoDuplicada: false,
     consumoMedioHistorico: 5,
+    fotoExifTimestamp: null,
   };
 }
 
@@ -190,6 +192,57 @@ describe("avaliarAbastecimento — combinação de regras", () => {
   it("não dispara nenhum alerta pra um abastecimento dentro de todos os limiares", () => {
     const alertas = avaliarAbastecimento(contextoBase());
     expect(alertas).toEqual([]);
+  });
+});
+
+describe("avaliarFotoAntigaOuReaproveitada", () => {
+  it("não dispara quando a foto não tem EXIF (sem metadado, sem penalidade)", () => {
+    const ctx = contextoBase();
+    ctx.fotoExifTimestamp = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
+  });
+
+  it("não dispara quando o EXIF é coerente com a data informada (mesmo dia)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.dataAbastecimento = "2026-07-03";
+    ctx.fotoExifTimestamp = "2026-07-03T14:00:00.000Z";
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
+  });
+
+  it("não dispara dentro da tolerância de 48h", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.dataAbastecimento = "2026-07-03";
+    ctx.fotoExifTimestamp = "2026-07-01T23:59:59.000Z"; // ~48h antes do fim do dia informado
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
+  });
+
+  it("dispara atenção quando o EXIF é bem mais antigo que a data informada (>48h)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.dataAbastecimento = "2026-07-03";
+    ctx.fotoExifTimestamp = "2026-06-01T10:00:00.000Z"; // mais de um mês antes
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+  });
+
+  it("não dispara quando a foto é DEPOIS da data informada (registro atrasado, fluxo legítimo)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.dataAbastecimento = "2026-06-01";
+    ctx.fotoExifTimestamp = "2026-07-03T10:00:00.000Z"; // foto tirada 'hoje', data informada é de um mês antes
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
+  });
+
+  it("não lança e não dispara com timestamp EXIF malformado", () => {
+    const ctx = contextoBase();
+    ctx.fotoExifTimestamp = "não é uma data";
+    expect(() => avaliarAbastecimento(ctx)).not.toThrow();
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
   });
 });
 

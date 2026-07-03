@@ -8,6 +8,12 @@ export interface ItemFila {
   payload: Record<string, string>; // campos já como string, prontos pra virar FormData
   fotoBlob: Blob | null;
   fotoNome: string | null;
+  // Só o "cabeçalho" do arquivo original (poucos KB, ver
+  // components/motorista/fluxo-abastecimento.tsx) — usado no servidor
+  // exclusivamente pra ler o EXIF, já que `fotoBlob` acima é a versão
+  // comprimida (canvas apaga todo o metadado). Pequeno o bastante pra não
+  // pesar na cota do IndexedDB.
+  fotoExifHeaderBlob: Blob | null;
   criadoEm: number;
   status: "pendente" | "erro";
   erro: string | null;

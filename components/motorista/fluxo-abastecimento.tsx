@@ -51,6 +51,14 @@ interface MetaOcr {
 
 const MAXIMO_TENTATIVAS_OCR = 2;
 
+// Só o "cabeçalho" do arquivo ORIGINAL (antes da compressão) é enviado pro
+// servidor ler o EXIF — é onde o EXIF de um JPEG mora, então não precisa da
+// imagem inteira. `File.slice()` é um corte puro (não recodifica), preserva
+// os bytes originais escritos pela câmera; enviar a foto inteira sem
+// comprimir dobraria o tamanho do upload e arriscaria estourar o limite de
+// payload de function serverless (Vercel).
+const TAMANHO_CABECALHO_EXIF_BYTES = 128 * 1024;
+
 const VALORES_INICIAIS: ValoresFormulario = {
   dataAbastecimento: new Date().toISOString().slice(0, 10),
   hora: "",
@@ -278,6 +286,11 @@ export default function FluxoAbastecimento({
       // — antes só o offline reduzia o tamanho antes de subir a foto.
       const fotoComprimida = await comprimirImagem(fotoFile);
       formData.set("foto", fotoComprimida, fotoFile.name);
+      formData.set(
+        "foto_exif",
+        fotoFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES),
+        fotoFile.name
+      );
     }
 
     try {
@@ -301,11 +314,13 @@ export default function FluxoAbastecimento({
     async function enfileirarOffline() {
       try {
         const fotoBlob = fotoFile ? await comprimirImagem(fotoFile) : null;
+        const fotoExifHeaderBlob = fotoFile ? fotoFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES) : null;
         await adicionarNaFila({
           registroUuid,
           qrToken,
           payload: campos,
           fotoBlob,
+          fotoExifHeaderBlob,
           fotoNome: fotoFile?.name ?? null,
           criadoEm: Date.now(),
           status: "pendente",

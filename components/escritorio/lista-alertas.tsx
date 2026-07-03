@@ -32,6 +32,7 @@ const ROTULO_REGRA: Record<string, string> = {
   foto_comprovante_duplicada: "Foto do comprovante duplicada",
   consumo_fora_da_faixa_historica: "Consumo fora da faixa histórica",
   litros_desproporcionais_ao_km_rodado: "Litros desproporcionais ao KM rodado",
+  foto_antiga_ou_reaproveitada: "Foto do comprovante mais antiga que o esperado",
 };
 
 export interface AlertaComContexto {
