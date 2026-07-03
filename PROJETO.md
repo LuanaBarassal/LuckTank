@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-03 (fim da Fase 7).
+Última atualização: 2026-07-02 (Fase 8, Bloco 3 — roteiro de teste de fumaça).
 
 ## Visão do produto
 
@@ -547,6 +547,143 @@ schema desnecessária pra algo que já não faz mal nenhum sentado ali.
   olhos no painel de alertas (borda + fundo vermelho vs. atenção em âmbar
   discreto), sidebar com item ativo em ciano, progresso do wizard avançando
   visualmente entre passos, foco em ciano nos campos de login.
+- ✅ **Bloco 3 — Roteiro de teste de fumaça em produção entregue.** Executado
+  pelo usuário (não por mim) em `luck-tank.vercel.app`, com dados reais da
+  Expresso Mundial — ver checklist completo na seção "Roteiro de teste de
+  fumaça em produção" logo abaixo.
+- ⬜ Bloco 4 — CI (GitHub Actions).
+
+## Roteiro de teste de fumaça em produção
+
+> Executado manualmente pelo dono do produto em `luck-tank.vercel.app`, com
+> dados reais da Expresso Mundial — não pelo agente. Serve como o "sinal
+> verde" final antes do piloto valer pra motoristas de verdade. Cada passo
+> tem o resultado ESPERADO ao lado; qualquer divergência é bug a reportar
+> antes de liberar o piloto.
+
+### 1. Login como administrador
+1. Acesse `https://luck-tank.vercel.app/`.
+   **Esperado:** redireciona sozinho pra `/login` (painel navy à esquerda
+   em telas largas, formulário claro à direita).
+2. Entre com o e-mail/senha do administrador real.
+   **Esperado:** redireciona pra `/dashboard`; sidebar navy aparece com
+   Dashboard/Ônibus/Motoristas/Alertas/Configurações.
+
+### 2. Cadastrar veículo real
+1. Ônibus → **Novo veículo** (só aparece pra papel administrador).
+2. Preencha placa, modelo, marca, ano, **capacidade do tanque em litros**
+   (importante — é o gatilho do alerta crítico do passo 6b) e **tipo de
+   combustível**.
+   **Esperado:** salva, volta pra `/onibus`, o veículo aparece na lista com
+   badge verde "Ativo".
+3. Entre no veículo cadastrado, confira o card "QR do veículo": baixe o SVG
+   e o PNG, abra "Ver etiqueta para impressão".
+   **Esperado:** QR baixa nos dois formatos; a etiqueta mostra o QR + placa
+   + modelo/ano, pronta pra imprimir e colar no ônibus.
+
+### 3. Cadastrar motorista real
+1. Motoristas → **Novo motorista** (gerente ou administrador).
+2. Preencha nome (CPF é opcional).
+   **Esperado:** salva, volta pra `/motoristas`, aparece na lista com badge
+   "Ativo".
+
+### 4. Fluxo completo no celular (via QR)
+1. No celular, escaneie o QR impresso (ou abra a URL `/r/<qr_token>` direto).
+   **Esperado:** tela clara, cabeçalho navy compacto com o nome da empresa e
+   a placa, indicador de progresso mostrando "Nome" em destaque.
+2. Selecione o motorista cadastrado no passo 3 (ou "Meu nome não está na
+   lista" pra testar nome livre) → Continuar.
+3. Tire uma foto real e legível de um comprovante/cupom de abastecimento.
+   **Esperado:** tela "Lendo o comprovante..." aparece por alguns segundos,
+   depois o formulário some pré-preenchido com o que o Gemini leu, com o
+   aviso "Conferimos os dados automaticamente — revise antes de confirmar."
+4. Confira/corrija os campos preenchidos automaticamente, preencha o **KM
+   atual do veículo** (obrigatório, não vem da foto) e confirme.
+   **Esperado:** tela de sucesso "Abastecimento registrado! Obrigado. Os
+   dados já foram enviados para o escritório."
+
+### 5. Confirmar no dashboard
+1. Volte pro escritório (ou atualize a página), abra o **Dashboard**.
+   **Esperado:** os cards de resumo do dia (litros, valor gasto, nº de
+   abastecimentos, preço médio) refletem o registro novo; os gráficos têm
+   um ponto/barra a mais.
+2. Ônibus → o veículo cadastrado → confira "Histórico de abastecimentos".
+   **Esperado:** a linha nova aparece com data, KM, litros, valor e o nome
+   do motorista corretos.
+3. Confira a conta na mão: km rodado = KM informado − KM anterior do
+   veículo; consumo (km/L) = km rodado ÷ litros.
+   **Esperado:** os números batem com a conta manual (o banco calcula isso
+   automaticamente via coluna gerada, não deveria divergir nunca).
+
+### 6. Provocar cada alerta de propósito
+Repita o fluxo do passo 4 pra cada cenário abaixo, um de cada vez:
+
+**a) KM menor que o último registrado — deve BLOQUEAR de verdade**
+1. Preencha um KM **menor** que o último registrado do veículo.
+   **Esperado:** o formulário já impede confirmar (mensagem "KM não pode
+   ser menor que X" aparece embaixo do campo); se forçar o envio mesmo
+   assim, o servidor rejeita (nada é salvo, nenhum abastecimento novo
+   aparece no histórico).
+
+**b) Litros acima da capacidade do tanque — crítico, mas NÃO bloqueia**
+1. Registre um abastecimento com litros maiores que a capacidade do tanque
+   cadastrada no passo 2.
+   **Esperado:** o registro é aceito normalmente (motorista vê sucesso);
+   em `/alertas`, aparece um alerta **Crítico** "Litros acima da capacidade
+   do tanque" com a borda vermelha lateral bem visível.
+
+**c) Nota fiscal duplicada — crítico**
+1. Registre um abastecimento usando o **mesmo número de nota fiscal** de um
+   abastecimento anterior do mesmo veículo.
+   **Esperado:** registro aceito + alerta crítico "Nota fiscal duplicada"
+   em `/alertas`.
+
+**d) Foto duplicada — crítico**
+1. Registre outro abastecimento reenviando a **mesma foto** (mesmo arquivo)
+   de um comprovante já usado nesse veículo.
+   **Esperado:** registro aceito + alerta crítico "Foto do comprovante
+   duplicada" em `/alertas`.
+
+2. Em `/alertas`, confira visualmente: os críticos saltam aos olhos (fundo
+   levemente vermelho + borda sólida), diferente de eventuais alertas de
+   atenção (âmbar, mais discretos). Clique em "Resolver" num deles.
+   **Esperado:** ele sai da lista de pendentes, a contagem no menu lateral
+   cai, e ele passa a aparecer em "Resolvidos".
+
+### 7. Caminho offline
+1. No celular, abra a página do QR **antes** de cortar a conexão.
+2. Ative modo avião (ou desligue wifi/dados).
+3. Preencha o fluxo normalmente (nome, foto — o app pula o OCR direto pro
+   formulário manual porque está offline —, dados, KM) e confirme.
+   **Esperado:** tela de sucesso muda a mensagem pra "Você está sem
+   internet — salvamos no aparelho e vamos enviar assim que a conexão
+   voltar."
+4. Reative a internet (sem precisar reabrir a página).
+   **Esperado:** em pouco tempo o registro sincroniza sozinho e aparece no
+   histórico do veículo/dashboard, sem precisar repetir nada manualmente.
+
+### 8. Testar permissões (papel supervisor)
+1. Convide um usuário com papel **supervisor** em Configurações (só
+   administrador convida) — ou, se preferir não gastar um convite real
+   agora, use a conta de teste já existente `supervisor.teste@lucktank.test`
+   (criada durante o hardening da Fase 8 Bloco 2, papel supervisor).
+2. Logado como esse supervisor, tente:
+   - Cadastrar um veículo novo (Ônibus → Novo veículo).
+     **Esperado:** o botão "Novo veículo" nem aparece pro supervisor (só
+     administrador vê); se acessar `/onibus/novo` direto pela URL, a
+     página mostra "Só administradores podem cadastrar veículos."
+   - Cadastrar um motorista novo (Motoristas → Novo motorista).
+     **Esperado:** mesma coisa — bloqueado, mensagem "Só gerente ou
+     administrador podem cadastrar motoristas."
+   - Ver o Dashboard, Ônibus, Motoristas e Alertas (leitura), e **Resolver**
+     um alerta.
+     **Esperado:** tudo isso funciona normalmente — supervisor só é
+     restrito em cadastro/edição, não em leitura nem em resolver alertas.
+
+---
+
+Ao terminar os 8 passos, qualquer resultado diferente do "Esperado" é bug —
+reportar antes de considerar o piloto liberado pra motoristas reais.
 
 ## Regras invariantes (não podem quebrar)
 
