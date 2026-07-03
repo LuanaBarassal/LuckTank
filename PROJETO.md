@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-03 (fim da Fase 8 — validação em produção e prontidão pra piloto).
+Última atualização: 2026-07-03 (pós-Fase 8: validação automatizada de fraude/negócio + relatório de consumo por veículo).
 
 ## Visão do produto
 
@@ -694,6 +694,93 @@ Repita o fluxo do passo 4 pra cada cenário abaixo, um de cada vez:
 
 Ao terminar os 8 passos, qualquer resultado diferente do "Esperado" é bug —
 reportar antes de considerar o piloto liberado pra motoristas reais.
+
+## Validação automatizada dos cenários de fraude/negócio (pós-Fase 8)
+
+Depois do roteiro de fumaça manual, os cenários que NÃO dependem de hardware
+físico (câmera, celular, modo avião) foram automatizados num script Node
+único (`fetch` contra `/api/abastecimentos` + `@supabase/supabase-js` com
+service role pra setup/verificação/limpeza), rodado contra o Supabase real
+do projeto (mesmo banco de produção) via servidor de desenvolvimento local
+— não contra `luck-tank.vercel.app` direto, pra não gastar o rate limit de
+produção nem misturar tráfego de teste com telemetria real. Um veículo de
+teste dedicado (placa `TST...`, isolado do `EXM1A23` real) foi criado,
+usado, e **removido por completo ao final** (idem alertas, mídias e
+arquivos de Storage gerados) — verificado depois com queries
+independentes que não sobrou nada.
+
+**9/9 cenários passaram**: bloqueio de KM (bloqueia mesmo, 409, não grava),
+litros acima da capacidade (crítico), nota fiscal duplicada (crítico), foto
+duplicada — mesmo hash SHA-256 (crítico), consumo fora da faixa histórica
+(atenção), litros desproporcionais ao KM rodado (dispara junto com o
+anterior, como já era esperado desde a Fase 6), idempotência por
+`registro_uuid` (reenvio retorna o mesmo id, não duplica linha), permissão
+do papel supervisor (bloqueado por RLS em `veiculos`/`motoristas`, mas
+resolve alerta normalmente), e os cálculos derivados (`km_rodado`,
+`consumo_kml`, R$/litro) batendo com a conta manual.
+
+**Não coberto por automação (decisão deliberada, continua manual)**: OCR
+com foto real de comprovante, captura de câmera, e o caminho offline (modo
+avião → reconectar → sincronizar sozinho) — a fila offline roda inteira no
+IndexedDB do navegador, não dá pra exercitar de um script Node sem simular
+o browser inteiro.
+
+## Relatório de consumo por veículo (dashboard do escritório)
+
+Substituição da planilha manual do cliente (uma linha por abastecimento
+com KM rodado/consumo/valor por litro calculados à mão) pela aba do
+veículo no escritório. **Sem mudança de schema nem de regra de cálculo** —
+`km_rodado` e `consumo_kml` já existem como generated columns desde a Fase
+1; isto é só exibição + agregação em cima do que já existe.
+
+- `lib/onibus/estatisticas.ts`: função pura `calcularEstatisticasVeiculo`
+  (mesmo padrão de `lib/validacao/regras.ts`/`lib/dashboard/agregacoes.ts`)
+  — recebe o histórico bruto (todo ele, sem `limit`) e devolve as 3 médias:
+  - **Consumo médio (km/L)** = soma dos km rodados ÷ soma dos litros — dos
+    registros com km_rodado válido. Soma/soma, não média das médias (mais
+    fiel quando os abastecimentos têm tamanhos de "viagem" bem diferentes
+    entre si — testado explicitamente com um caso onde as duas contas dão
+    números diferentes).
+  - **Custo médio por km (R$/km)** = soma dos valores totais ÷ soma dos km
+    rodados — mesma regra de "só registros válidos" nos dois lados da
+    conta.
+  - **Gasto médio por abastecimento (R$)** = soma dos valores totais ÷
+    número de abastecimentos — este SIM conta todos os registros, inclusive
+    os sem km rodado válido.
+  - **Regra crítica isolada explicitamente no código**: registro sem
+    `km_rodado` válido (nulo — 1º abastecimento do veículo, sem KM
+    anterior pra comparar — ou zero) entra no gasto médio, mas nunca no
+    consumo médio nem no custo por km; misturar os dois distorceria as
+    duas médias (dinheiro sem km correspondente pra atribuir).
+  - `lib/onibus/estatisticas.test.ts`: 5 testes (lista vazia, soma/soma
+    vs. média das médias, registro sem km válido excluído do km/L mas
+    incluído no gasto médio, km_rodado=0 tratado como inválido, e o caso
+    de só existir registro inválido).
+- `app/(escritorio)/onibus/[id]/page.tsx`: duas queries separadas —
+  histórico completo (sem `limit`, só as 4 colunas que a agregação usa) pra
+  alimentar as estatísticas sobre TODO o histórico, e a query já existente
+  (`limit(50)`, mais colunas) pra exibir a tabela. Cards de resumo (mesmo
+  estilo dos cards do dashboard) mostram as 3 médias + período coberto +
+  quantidade de registros que embasam cada uma (ex.: "média sobre 12
+  registro(s) válido(s)"), com nota explícita de quantos registros ficaram
+  de fora do km/L e do custo por km. Tabela ganhou as colunas **KM
+  rodado**, **R$/litro** (calculado na hora, não armazenado) e **Consumo
+  (km/L)**; "—" (não "0") quando `km_rodado`/`consumo_kml` são nulos.
+  Linhas com alerta crítico/atenção ganham fundo tingido + borda lateral
+  colorida + badge (mesmas cores semânticas do painel de alertas —
+  reaproveitadas, não redefinidas).
+- **Validado com dado real** (histórico acumulado do `EXM1A23` ao longo de
+  todas as fases anteriores, 13 abastecimentos): consumo médio 7.69 km/L,
+  custo médio R$0,77/km, gasto médio R$706,55 — **conferido à mão** somando
+  os 12 registros com km_rodado válido (10.000 km / 1.301 L = 7,69 km/L;
+  R$7.735,15 / 10.000 km = R$0,77) e os 13 no total (R$9.185,15 / 13 =
+  R$706,55) — bate exato com o que o card mostra. O 13º registro (primeiro
+  abastecimento já feito nesse veículo, sem KM anterior) aparece como "—"
+  na tabela e é excluído das duas primeiras médias, mas conta no gasto
+  médio, exatamente como especificado. Testado também um veículo novo
+  (0 abastecimentos): estado vazio "Sem dados suficientes ainda.", sem
+  erro/NaN — removido depois do teste, sem deixar lixo no banco.
+- `tsc`, `lint`, `test` (26 testes) e `build` confirmados limpos.
 
 ## Regras invariantes (não podem quebrar)
 

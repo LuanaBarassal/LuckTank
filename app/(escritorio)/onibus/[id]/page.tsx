@@ -6,6 +6,13 @@ import VeiculoForm from "@/components/escritorio/veiculo-form";
 import VeiculoAtivoToggle from "@/components/escritorio/veiculo-ativo-toggle";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "@/lib/onibus/estatisticas";
+import { cn } from "@/lib/utils";
+
+const LIMITE_TABELA = 50;
+
+type NivelAlerta = "info" | "atencao" | "critico";
+const PRIORIDADE_NIVEL: Record<NivelAlerta, number> = { info: 0, atencao: 1, critico: 2 };
 
 export default async function VeiculoDetalhePage({ params }: { params: { id: string } }) {
   const usuario = await getUsuarioAtual();
@@ -20,13 +27,29 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
 
   if (!veiculo) notFound();
 
+  // Estatísticas são sobre TODO o histórico do veículo, não só a página
+  // exibida na tabela — por isso é uma query separada, sem limit, só com as
+  // colunas que a agregação realmente usa (payload pequeno mesmo pra
+  // veículos com muitos anos de histórico).
+  const { data: historicoCompleto } = await supabase
+    .from("abastecimentos")
+    .select("data_abastecimento, km_rodado, litros, valor_total")
+    .eq("veiculo_id", veiculo.id)
+    .eq("status", "ativo");
+
+  const estatisticas = calcularEstatisticasVeiculo(
+    (historicoCompleto ?? []) as AbastecimentoParaEstatistica[]
+  );
+
   const { data: abastecimentos } = await supabase
     .from("abastecimentos")
-    .select("id, data_abastecimento, km_atual, litros, valor_total, motorista_id, motorista_nome_livre")
+    .select(
+      "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, motorista_id, motorista_nome_livre"
+    )
     .eq("veiculo_id", veiculo.id)
     .eq("status", "ativo")
     .order("criado_em", { ascending: false })
-    .limit(50);
+    .limit(LIMITE_TABELA);
 
   const idsMotoristas = [
     ...new Set((abastecimentos ?? []).map((a) => a.motorista_id).filter((id): id is string => !!id)),
@@ -38,6 +61,27 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
 
   const mapaMotoristas = new Map((motoristas ?? []).map((m) => [m.id, m.nome]));
 
+  // Nível mais alto de alerta por abastecimento — um registro pode ter mais
+  // de um alerta (ex.: capacidade do tanque + consumo fora da faixa juntos,
+  // ver lib/validacao/regras.ts); a linha na tabela usa o mais grave dos dois.
+  const idsAbastecimentos = (abastecimentos ?? []).map((a) => a.id);
+  const { data: alertasDosAbastecimentos } = idsAbastecimentos.length
+    ? await supabase
+        .from("alertas")
+        .select("entidade_id, nivel")
+        .eq("entidade_tipo", "abastecimento")
+        .in("entidade_id", idsAbastecimentos)
+    : { data: [] as { entidade_id: string; nivel: string }[] };
+
+  const mapaNivelAlerta = new Map<string, NivelAlerta>();
+  for (const alerta of alertasDosAbastecimentos ?? []) {
+    const nivel = alerta.nivel as NivelAlerta;
+    const atual = mapaNivelAlerta.get(alerta.entidade_id);
+    if (!atual || PRIORIDADE_NIVEL[nivel] > PRIORIDADE_NIVEL[atual]) {
+      mapaNivelAlerta.set(alerta.entidade_id, nivel);
+    }
+  }
+
   const podeEditar = usuario.papel === "gerente" || usuario.papel === "administrador";
 
   return (
@@ -46,6 +90,8 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
         <h1 className="font-title text-2xl font-bold text-white">{veiculo.placa}</h1>
         {podeEditar && <VeiculoAtivoToggle id={veiculo.id} ativo={veiculo.ativo} />}
       </div>
+
+      <ResumoEstatisticas estatisticas={estatisticas} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card variant="dark">
@@ -94,7 +140,14 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
       </div>
 
       <Card variant="dark">
-        <CardTitle variant="dark">Histórico de abastecimentos</CardTitle>
+        <CardTitle variant="dark">
+          Histórico de abastecimentos
+          {(abastecimentos?.length ?? 0) === LIMITE_TABELA && (
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              (últimos {LIMITE_TABELA} — as médias acima consideram todo o histórico)
+            </span>
+          )}
+        </CardTitle>
         {!abastecimentos?.length ? (
           <div className="flex flex-col items-center gap-1 py-6 text-center">
             <span className="text-2xl">⛽</span>
@@ -106,29 +159,148 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
               <thead>
                 <tr className="border-b border-navy-800 text-slate-400">
                   <th className="py-2 pr-4 font-medium">Data</th>
-                  <th className="py-2 pr-4 font-medium">KM</th>
+                  <th className="py-2 pr-4 font-medium">KM atual</th>
+                  <th className="py-2 pr-4 font-medium">KM rodado</th>
                   <th className="py-2 pr-4 font-medium">Litros</th>
-                  <th className="py-2 pr-4 font-medium">Valor</th>
+                  <th className="py-2 pr-4 font-medium">R$/litro</th>
+                  <th className="py-2 pr-4 font-medium">Total</th>
+                  <th className="py-2 pr-4 font-medium">Consumo (km/L)</th>
                   <th className="py-2 pr-4 font-medium">Motorista</th>
                 </tr>
               </thead>
               <tbody>
-                {abastecimentos.map((a) => (
-                  <tr key={a.id} className="border-b border-navy-800/50 text-slate-200">
-                    <td className="py-2 pr-4">{formatarDataBr(a.data_abastecimento)}</td>
-                    <td className="py-2 pr-4">{a.km_atual}</td>
-                    <td className="py-2 pr-4">{a.litros} L</td>
-                    <td className="py-2 pr-4">{formatarMoeda(a.valor_total)}</td>
-                    <td className="py-2 pr-4">
-                      {a.motorista_nome_livre ?? (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ?? "—"}
-                    </td>
-                  </tr>
-                ))}
+                {abastecimentos.map((a) => {
+                  const nivel = mapaNivelAlerta.get(a.id);
+                  const valorPorLitro = a.litros > 0 ? a.valor_total / a.litros : null;
+                  return (
+                    <tr
+                      key={a.id}
+                      className={cn(
+                        "border-b border-navy-800/50 text-slate-200",
+                        nivel === "critico" && "bg-critico-500/5",
+                        nivel === "atencao" && "bg-atencao-500/5"
+                      )}
+                    >
+                      <td
+                        className={cn(
+                          "py-2 pr-4",
+                          nivel === "critico" && "border-l-4 border-l-critico-500 pl-2",
+                          nivel === "atencao" && "border-l-4 border-l-atencao-500 pl-2"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          {formatarDataBr(a.data_abastecimento)}
+                          {nivel && (
+                            <span
+                              className={cn(
+                                "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase",
+                                nivel === "critico" && "bg-critico-500 text-white",
+                                nivel === "atencao" && "bg-atencao-500/15 text-atencao-400"
+                              )}
+                            >
+                              {nivel === "critico" ? "Crítico" : "Atenção"}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-4">{a.km_atual}</td>
+                      <td className="py-2 pr-4">{a.km_rodado != null ? `${a.km_rodado} km` : "—"}</td>
+                      <td className="py-2 pr-4">{a.litros} L</td>
+                      <td className="py-2 pr-4">
+                        {valorPorLitro != null ? formatarMoeda(valorPorLitro) : "—"}
+                      </td>
+                      <td className="py-2 pr-4">{formatarMoeda(a.valor_total)}</td>
+                      <td className="py-2 pr-4">
+                        {a.consumo_kml != null ? Number(a.consumo_kml).toFixed(2) : "—"}
+                      </td>
+                      <td className="py-2 pr-4">
+                        {a.motorista_nome_livre ?? (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ?? "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
+    </div>
+  );
+}
+
+function ResumoEstatisticas({ estatisticas }: { estatisticas: ReturnType<typeof calcularEstatisticasVeiculo> }) {
+  if (estatisticas.totalAbastecimentos === 0) {
+    return (
+      <Card variant="dark">
+        <div className="flex flex-col items-center gap-1 py-4 text-center">
+          <span className="text-2xl">📊</span>
+          <p className="text-sm text-slate-400">Sem dados suficientes ainda.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  const periodoTexto = estatisticas.periodo
+    ? `${formatarDataBr(estatisticas.periodo.inicio)} a ${formatarDataBr(estatisticas.periodo.fim)}`
+    : "—";
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <CardEstatistica
+          label="Consumo médio"
+          valor={estatisticas.consumoMedioKml != null ? `${estatisticas.consumoMedioKml.toFixed(2)} km/L` : null}
+          rodape={
+            estatisticas.abastecimentosComKmValido > 0
+              ? `média sobre ${estatisticas.abastecimentosComKmValido} registro(s) válido(s)`
+              : undefined
+          }
+        />
+        <CardEstatistica
+          label="Custo médio por km"
+          valor={estatisticas.custoMedioPorKm != null ? formatarMoeda(estatisticas.custoMedioPorKm) : null}
+          rodape={
+            estatisticas.abastecimentosComKmValido > 0
+              ? `média sobre ${estatisticas.abastecimentosComKmValido} registro(s) válido(s)`
+              : undefined
+          }
+        />
+        <CardEstatistica
+          label="Gasto médio por abastecimento"
+          valor={formatarMoeda(estatisticas.gastoMedioPorAbastecimento ?? 0)}
+          rodape={`média sobre ${estatisticas.totalAbastecimentos} registro(s)`}
+        />
+      </div>
+      <p className="text-xs text-slate-500">
+        Período coberto: {periodoTexto} · {estatisticas.totalAbastecimentos} abastecimento(s) no total.
+        {estatisticas.abastecimentosComKmValido < estatisticas.totalAbastecimentos && (
+          <>
+            {" "}
+            ({estatisticas.totalAbastecimentos - estatisticas.abastecimentosComKmValido} sem KM rodado válido —
+            não entram no consumo médio nem no custo por km.)
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function CardEstatistica({
+  label,
+  valor,
+  rodape,
+}: {
+  label: string;
+  valor: string | null;
+  rodape?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-navy-800 bg-navy-900 p-5">
+      <div className="text-sm text-slate-400">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-white">{valor ?? "—"}</div>
+      <div className="mt-1 text-xs text-slate-500">
+        {valor != null ? rodape : "sem dados suficientes ainda"}
+      </div>
     </div>
   );
 }

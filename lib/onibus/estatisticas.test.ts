@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "./estatisticas";
+
+describe("calcularEstatisticasVeiculo", () => {
+  it("retorna tudo nulo/zero quando não há abastecimento nenhum", () => {
+    const stats = calcularEstatisticasVeiculo([]);
+    expect(stats).toEqual({
+      totalAbastecimentos: 0,
+      abastecimentosComKmValido: 0,
+      consumoMedioKml: null,
+      custoMedioPorKm: null,
+      gastoMedioPorAbastecimento: null,
+      periodo: null,
+    });
+  });
+
+  it("calcula soma/soma (não média das médias) com registros de tamanhos diferentes", () => {
+    // 500km/50L (10 km/L) e 100km/20L (5 km/L) — média das médias daria
+    // 7.5 km/L; soma/soma dá (500+100)/(50+20) = 600/70 ≈ 8.57 km/L.
+    const lista: AbastecimentoParaEstatistica[] = [
+      { data_abastecimento: "2026-07-01", km_rodado: 500, litros: 50, valor_total: 300 },
+      { data_abastecimento: "2026-07-02", km_rodado: 100, litros: 20, valor_total: 120 },
+    ];
+    const stats = calcularEstatisticasVeiculo(lista);
+    expect(stats.totalAbastecimentos).toBe(2);
+    expect(stats.abastecimentosComKmValido).toBe(2);
+    expect(stats.consumoMedioKml).toBeCloseTo(600 / 70, 5);
+    expect(stats.custoMedioPorKm).toBeCloseTo(420 / 600, 5);
+    expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(420 / 2, 5);
+    expect(stats.periodo).toEqual({ inicio: "2026-07-01", fim: "2026-07-02" });
+  });
+
+  it("exclui registros sem km_rodado válido do consumo/custo por km, mas inclui no gasto médio", () => {
+    const lista: AbastecimentoParaEstatistica[] = [
+      // primeiro abastecimento do veículo — sem KM anterior, km_rodado null
+      { data_abastecimento: "2026-07-01", km_rodado: null, litros: 60, valor_total: 400 },
+      { data_abastecimento: "2026-07-02", km_rodado: 500, litros: 50, valor_total: 300 },
+    ];
+    const stats = calcularEstatisticasVeiculo(lista);
+    expect(stats.totalAbastecimentos).toBe(2);
+    expect(stats.abastecimentosComKmValido).toBe(1);
+    // Só o segundo registro entra no consumo/custo por km:
+    expect(stats.consumoMedioKml).toBeCloseTo(500 / 50, 5);
+    expect(stats.custoMedioPorKm).toBeCloseTo(300 / 500, 5);
+    // Os dois entram no gasto médio por abastecimento:
+    expect(stats.gastoMedioPorAbastecimento).toBeCloseTo((400 + 300) / 2, 5);
+  });
+
+  it("trata km_rodado igual a zero como inválido (não nulo, mas ainda assim excluído)", () => {
+    const lista: AbastecimentoParaEstatistica[] = [
+      { data_abastecimento: "2026-07-01", km_rodado: 0, litros: 40, valor_total: 250 },
+    ];
+    const stats = calcularEstatisticasVeiculo(lista);
+    expect(stats.abastecimentosComKmValido).toBe(0);
+    expect(stats.consumoMedioKml).toBeNull();
+    expect(stats.custoMedioPorKm).toBeNull();
+    expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(250, 5);
+  });
+
+  it("consumo/custo por km ficam null quando NENHUM registro tem km_rodado válido", () => {
+    const lista: AbastecimentoParaEstatistica[] = [
+      { data_abastecimento: "2026-07-01", km_rodado: null, litros: 60, valor_total: 400 },
+    ];
+    const stats = calcularEstatisticasVeiculo(lista);
+    expect(stats.totalAbastecimentos).toBe(1);
+    expect(stats.abastecimentosComKmValido).toBe(0);
+    expect(stats.consumoMedioKml).toBeNull();
+    expect(stats.custoMedioPorKm).toBeNull();
+    expect(stats.gastoMedioPorAbastecimento).toBeCloseTo(400, 5);
+    expect(stats.periodo).toEqual({ inicio: "2026-07-01", fim: "2026-07-01" });
+  });
+});
