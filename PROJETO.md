@@ -66,10 +66,16 @@ autenticado, com permissões por papel e um motor de alertas graduado
   funções serverless da Vercel não compartilham estado entre invocações.
   Precisa de `UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN` no `.env`
   de produção — sem isso, o rate limit fica inerte (abre, não derruba).
-- **Testes: Vitest** (`npm test`), só cobrindo `lib/validacao/regras.ts` por
-  enquanto (o motor de fraude, que é o que mais custa caro errar em
-  silêncio). Não cobre o resto do app ainda — decisão deliberada do
-  hardening pós-Fase 7, não uma meta de cobertura total.
+- **Testes: Vitest** (`npm test`), cobrindo `lib/validacao/regras.ts` (motor
+  de fraude), `lib/onibus/estatisticas.ts`, `lib/filtros/*` e `lib/export/*`
+  — as funções puras/de maior risco silencioso. Não cobre o resto do app
+  (páginas, rotas inteiras) — decisão deliberada do hardening pós-Fase 7,
+  não uma meta de cobertura total.
+- **Export: `exceljs`** (Excel, com hyperlink nativo em célula) e `jspdf` +
+  `jspdf-autotable` (PDF) — ver "Melhorias de uso, Bloco 4". `jspdf` em vez
+  de `pdfkit` de propósito: `pdfkit` lê fontes `.afm` do disco em tempo de
+  execução (risco de bundling em function serverless na Vercel); `jspdf`
+  embute fontes padrão como dado JS.
 - **Identidade visual: navy (`primary`/`navy`, `#0a1628`) + ciano (`cyan`,
   `#00d4ff`)**, mesma paleta do LuckFrota (produto irmão) — ver "Design por
   contexto" na seção da Fase 8 pra regra completa de onde cada tema se
@@ -1026,6 +1032,86 @@ vez, com validação própria.
   (`motoristas/[id]/page.tsx`) — só a tabela explicitamente chamada
   "Histórico de abastecimentos" (aba do ônibus) ganhou a coluna. Fácil de
   estender se fizer sentido depois.
+- ✅ **Bloco 4 — Export Excel + PDF, respeitando o filtro ativo.**
+
+  **Novas dependências**: `exceljs` (Excel, com suporte nativo a hyperlink
+  em célula, estilo, cores, congelar painel) e `jspdf` + `jspdf-autotable`
+  (PDF). Escolhido `jspdf` em vez de `pdfkit` de propósito: `pdfkit` lê
+  fontes AFM do disco em tempo de execução, o que é um risco conhecido de
+  bundling em function serverless (Vercel) se o tracing de arquivo não pegar
+  os `.afm` certos; `jspdf` embute as fontes padrão como dado JS, sem
+  depender do sistema de arquivos — mais seguro pro alvo de deploy do
+  projeto.
+
+  **Referência do LuckFrota usada de verdade**: consegui abrir a pasta
+  (`C:\Users\User\Desktop\luckfrota`) e localizei
+  `src/services/exportExcelProfessional.js` e
+  `exportPDFProfessional.js` — já usam exatamente `exceljs` e
+  `jspdf`+`jspdf-autotable`, com a mesma paleta navy/ciano
+  (`0A1628`/`00D4FF`) do LuckTank. Padrões replicados aqui: header da
+  planilha em negrito branco sobre navy sólido, linhas alternadas em cinza
+  claro, linha de totais destacada, formato de moeda `"R$"#,##0.00`, cor de
+  aba (`tabColor`) por sheet; no PDF, faixa navy no topo com título branco +
+  subtítulo em ciano, tabela via `autoTable` com cabeçalho navy/texto
+  branco, linhas alternadas, `theme: "grid"`.
+
+  **`lib/export/`** (funções puras testadas, mesmo padrão de
+  `lib/validacao/regras.ts`): `resumo.ts` (`calcularResumoExport` — mesma
+  regra de soma/soma de `lib/onibus/estatisticas.ts`, 5 testes) e
+  `nome-arquivo.ts` (`gerarNomeArquivoExport` — `LuckTank_<Empresa sem
+  acento/espaço>_<período>.<ext>`; período vira `YYYY-MM` quando o filtro
+  cobre um mês corrido inteiro, senão `YYYY-MM-DD_a_YYYY-MM-DD`, 4 testes
+  incluindo o caso de fevereiro bissexto). `excel.ts`/`pdf.ts` são os
+  geradores de verdade (não são puros — usam as libs — mas recebem só dado
+  já resolvido, sem query dentro, mesmo espírito).
+
+  **`app/api/export/route.ts`** (nova, autenticada): usa **exatamente**
+  `parseFiltrosAbastecimento`/`resolverPeriodo`/`aplicarFiltrosQuery` do
+  Bloco 1 — o mesmo filtro que a tela está mostrando no momento do clique,
+  nunca uma reinterpretação própria. O dashboard passa `de`/`ate` já
+  **resolvidos** (não os parâmetros crus da URL) como query string do link
+  de export, pra garantir que o arquivo gerado nunca possa divergir do que
+  está na tela por causa de um recálculo de "hoje" entre o carregamento da
+  página e o clique no botão. A foto de cada linha vira link pra
+  `/api/midias/[id]` (a rota autenticada do Bloco 3 — nunca a URL antiga do
+  Storage), então o link só abre pra quem tem sessão válida da empresa
+  certa; no PDF, os bytes da foto são baixados (via `baixarFotoComprovante`,
+  reaproveitado do Bloco 3) e embutidos como miniatura só quando o formato é
+  JPEG/PNG/WEBP (HEIC — comum em foto de iPhone — não tem suporte nativo do
+  jsPDF; a linha fica sem miniatura nesse caso, sem quebrar o resto do
+  relatório).
+
+  **Excel**: aba "Abastecimentos" (uma linha por abastecimento: Data,
+  Veículo, Motorista, KM, KM rodado, Litros, R$/litro, Total, Consumo
+  (km/L), Posto, Cidade, Nº nota, Alertas, **Foto** — célula separada com
+  hyperlink clicável "Ver foto", nunca embutida em outra coluna) + linha de
+  TOTAIS ao final da mesma aba + aba "Resumo" separada (empresa, período,
+  filtros aplicados, quantidade de registros, total de litros, total gasto,
+  preço médio/litro, consumo médio). **PDF**: faixa navy com título/período/
+  filtros no topo, tabela com miniatura da foto na primeira coluna, resumo
+  do período ao final.
+
+  **Validado com dado real** — dois caminhos, porque a automação de
+  navegador desta sessão bloqueia tanto ler o arquivo baixado (sem acesso ao
+  diretório de downloads do Chrome automatizado) quanto extrair o binário
+  via JS de página (bloqueio de segurança da própria ferramenta contra
+  exfiltração de base64): (1) **clique real no botão**, no navegador,
+  logado como o administrador, com filtro `veículo=EXM1A23 + este mês`
+  aplicado — `fetch` teimoso, mas o log do servidor confirmou `200` pros
+  dois GETs (`formato=xlsx`); (2) **geração via os módulos reais do
+  projeto** (`lib/export/excel.ts`/`pdf.ts`/`resumo.ts`, mesmíssimo código,
+  rodado fora do Next via `tsx` com um shim mínimo só pro guard de
+  `server-only` — que não tem efeito nenhum na lógica) usando os dados reais
+  do Supabase com o mesmo filtro: **13 registros, 1.551,0 L, R$ 9.185,15,
+  R$ 5,92/L, 7,69 km/L** — bate exatamente com o que o dashboard e a aba do
+  ônibus já mostravam (Bloco 1). Excel lido de volta linha a linha
+  (`exceljs`) confirma 13 linhas de dado + linha de TOTAIS com os mesmos
+  números; link da coluna Foto confirmado apontando pra
+  `/api/midias/<id>` de verdade. PDF confirmado com assinatura `%PDF-`
+  válida, 155KB (13 miniaturas de foto real embutidas, todas baixadas com
+  sucesso), contendo a placa do veículo e o valor total do resumo no texto
+  bruto do arquivo. `tsc`, `lint`, `test` (59) e `build` confirmados limpos
+  (`/api/export` aparece na lista de rotas).
 
 ## Regras invariantes (não podem quebrar)
 

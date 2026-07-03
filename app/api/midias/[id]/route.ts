@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
+import { extrairCaminhoDoBucket } from "@/lib/midias";
 
 // Único jeito de servir uma foto de comprovante pro escritório desde a
 // 0007 (bucket virou privado, sem policy de SELECT em storage.objects —
@@ -53,16 +54,4 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       ...(baixar ? { "Content-Disposition": `attachment; filename="${nomeArquivo}"` } : {}),
     },
   });
-}
-
-// A URL salva em `midias.url` é a pública antiga (getPublicUrl, gerada no
-// upload em /api/abastecimentos) — continua no formato
-// ".../object/public/comprovantes/<caminho>" mesmo com o bucket privado
-// agora (getPublicUrl só monta a string, não valida se o bucket é público).
-// Aqui só se extrai o `<caminho>` de volta pra chamar `.download()`.
-function extrairCaminhoDoBucket(url: string): string | null {
-  const marcador = "/object/public/comprovantes/";
-  const indice = url.indexOf(marcador);
-  if (indice === -1) return null;
-  return decodeURIComponent(url.slice(indice + marcador.length));
 }

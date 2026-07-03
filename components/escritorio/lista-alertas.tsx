@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { resolverAlerta } from "@/app/(escritorio)/alertas/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ROTULO_REGRA } from "@/lib/validacao/rotulos";
 
 const ROTULO_NIVEL: Record<string, string> = {
   info: "Info",
@@ -24,15 +25,6 @@ const CLASSE_BORDA_ITEM: Record<string, string> = {
   info: "border-l-info-500",
   atencao: "border-l-atencao-500",
   critico: "border-l-critico-500 bg-critico-500/5",
-};
-
-const ROTULO_REGRA: Record<string, string> = {
-  litros_acima_capacidade_tanque: "Litros acima da capacidade do tanque",
-  nota_fiscal_duplicada: "Nota fiscal duplicada",
-  foto_comprovante_duplicada: "Foto do comprovante duplicada",
-  consumo_fora_da_faixa_historica: "Consumo fora da faixa histórica",
-  litros_desproporcionais_ao_km_rodado: "Litros desproporcionais ao KM rodado",
-  foto_antiga_ou_reaproveitada: "Foto do comprovante mais antiga que o esperado",
 };
 
 export interface AlertaComContexto {

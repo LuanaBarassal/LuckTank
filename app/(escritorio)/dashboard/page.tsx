@@ -72,6 +72,18 @@ export default async function DashboardPage({
 
   const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
+  // Mesmo filtro resolvido usado na tela — de/ate já vêm calculados aqui
+  // (não recomputados no clique), então o export nunca pode divergir do que
+  // está na tela no momento, mesmo que "hoje" mude entre o carregamento da
+  // página e o clique no botão.
+  const paramsExport = new URLSearchParams();
+  paramsExport.set("de", periodo.de);
+  paramsExport.set("ate", periodo.ate);
+  if (filtros.veiculoId) paramsExport.set("veiculo_id", filtros.veiculoId);
+  if (filtros.motoristaId) paramsExport.set("motorista_id", filtros.motoristaId);
+  if (filtros.motoristaNomeLivre) paramsExport.set("motorista_nome", filtros.motoristaNomeLivre);
+  const queryExport = paramsExport.toString();
+
   const RESUMO = [
     { label: "Litros no período", valor: `${litrosPeriodo.toFixed(1)} L` },
     { label: "Valor gasto no período", valor: formatarMoeda(valorPeriodo) },
@@ -88,7 +100,23 @@ export default async function DashboardPage({
           <FiltrosAbastecimento veiculos={veiculos} opcoesMotorista={opcoesMotorista} />
         </Suspense>
 
-        <p className="mb-4 mt-3 text-xs text-slate-500">Período: {periodoTexto}</p>
+        <div className="mb-4 mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-slate-500">Período: {periodoTexto}</p>
+          <div className="flex items-center gap-2">
+            <a
+              href={`/api/export?${queryExport}&formato=xlsx`}
+              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+            >
+              Exportar Excel
+            </a>
+            <a
+              href={`/api/export?${queryExport}&formato=pdf`}
+              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+            >
+              Exportar PDF
+            </a>
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {RESUMO.map((item) => (
