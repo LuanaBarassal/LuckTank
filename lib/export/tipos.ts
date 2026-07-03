@@ -25,6 +25,10 @@ export interface RegistroExport {
 export interface ResumoExport {
   totalLitros: number;
   totalValor: number;
+  // Só soma registros com km_rodado válido — mesma regra crítica de
+  // lib/onibus/estatisticas.ts (registro sem KM anterior pra comparar não
+  // tem "km rodado" nenhum pra somar).
+  totalKmRodado: number;
   precoMedioLitro: number | null;
   consumoMedioKml: number | null;
   quantidadeRegistros: number;

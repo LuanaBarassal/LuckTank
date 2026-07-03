@@ -1201,6 +1201,73 @@ Pedido do usuário pós-Bloco 4 de export, em 3 blocos.
   13: soma R$9.185,15). `tsc`, `lint`, `test` (63 — os 4 de
   `estatisticas.test.ts` ganharam asserts novos, sem aumentar a contagem de
   `it()`) e `build` confirmados limpos.
+- ✅ **Bloco 3 — Export (Excel + PDF) dentro da aba do ônibus, com as
+  médias.** Não criei uma rota nova — `/api/export` (Bloco 4 de export)
+  já aceitava `veiculo_id` como filtro; esse bloco só ensinou a MESMA rota
+  a ficar "consciente de veículo" quando o filtro resolve pra exatamente
+  um: nesse caso, calcula as médias e troca a convenção de nome de
+  arquivo. Evita duplicar toda a lógica de query/foto/alerta que já existia
+  pro export do dashboard.
+
+  **`lib/onibus/estatisticas.ts` reaproveitado, não reimplementado**: a
+  rota chama `calcularEstatisticasVeiculo` — a mesma função que já
+  alimenta os 3 cards de média na tela — sobre a mesma lista de
+  abastecimentos já buscada pro export. Garante que os números do arquivo
+  **nunca podem divergir** dos cards, porque é literalmente o mesmo
+  cálculo sobre o mesmo dado. `lib/export/excel.ts`/`pdf.ts` ganharam um
+  5º parâmetro opcional `medias?: EstatisticasVeiculo` — `undefined` no
+  export geral do dashboard (onde "consumo médio de vários veículos
+  juntos" não faz sentido do mesmo jeito), presente só quando o export sai
+  de dentro da aba de um veículo específico. Nos dois formatos, a seção
+  nova mostra "Consumo médio (km/L)", "Custo médio por km (R$/km)" e
+  "Gasto médio por abastecimento (R$)", cada um com a contagem de
+  registros que embasa (`abastecimentosComKmValido` pros dois primeiros,
+  `totalAbastecimentos` pro terceiro) — mesma distinção já usada nos cards
+  da tela. No PDF, o bloco de resumo ganhou uma checagem de espaço restante
+  na página (`alturaEstimada` vs. altura livre) — quebra pra uma página
+  nova em vez de estourar a margem inferior quando o resumo + médias não
+  cabem no que sobrou depois da tabela.
+
+  **`lib/export/tipos.ts`/`resumo.ts`**: `ResumoExport` ganhou
+  `totalKmRodado` (mesma regra assimétrica de sempre — só soma registros
+  com km_rodado válido) — isso beneficia os DOIS exports, não só o de
+  veículo: a linha de TOTAIS do Excel e o resumo do PDF agora mostram KM
+  rodado também no export geral do dashboard (multi-veículo), não só no de
+  um veículo só.
+
+  **Nome do arquivo**: `gerarNomeArquivoExport` mudou de assinatura —
+  antes recebia uma string (nome da empresa), agora recebe
+  `string[]` (segmentos), cada um limpo/slugificado separadamente e
+  juntado com `_` (em vez de virar uma coisa só). Export geral:
+  `[empresa.nome]` (comportamento idêntico a antes). Export de dentro da
+  aba do ônibus: `[veiculo.prefixo, veiculo.placa]` →
+  `LuckTank_1450_EXM1A23_2026-07.xlsx` (ou com o intervalo explícito
+  quando o período não é um mês corrido inteiro). Veículo sem prefixo
+  ainda funciona — segmento vazio é ignorado, só a placa entra no nome.
+
+  **UI**: botões "Exportar Excel"/"Exportar PDF" na aba do ônibus
+  (`onibus/[id]/page.tsx`), mesmo estilo dos botões do dashboard,
+  montados a partir do `periodo`/`filtros` **já resolvidos** na página
+  (mesmo motivo do dashboard: nunca deixar o clique recalcular "hoje" de
+  novo e divergir do que está na tela) — veículo sempre fixo, motorista
+  incluído só se filtrado.
+
+  **Validado**: gerado o Excel e o PDF de verdade via os módulos reais do
+  projeto (mesmo padrão de validação dos blocos de export anteriores —
+  `tsx` fora do Next, com o guard de `server-only` neutralizado só pro
+  script), com o veículo `1450 · EXM1A23` filtrado no período de julho:
+  **13 registros, KM rodado total 10.000, litros 1.551,0, R$ 9.185,15** —
+  bate com o Bloco 2. **Médias no arquivo idênticas aos cards da tela**:
+  consumo médio 7.69 km/L (12 registros válidos), custo médio R$0,77/km
+  (12 registros válidos), gasto médio R$706,55 (13 registros) — os três
+  números exatos que já apareciam na tela antes deste bloco. Nome do
+  arquivo confirmado: `LuckTank_1450_EXM1A23_2026-07-01_a_2026-07-03.xlsx`.
+  PDF confirmado com assinatura `%PDF-` válida, contendo "1450", o total
+  gasto e o gasto médio no texto bruto do arquivo. **Clique real no botão
+  "Exportar Excel"** na aba do ônibus, no navegador — servidor confirmou
+  `200` no log pro GET com `veiculo_id` fixo. `tsc`, `lint`, `test` (65 —
+  10 novos, entre `nome-arquivo.test.ts` e `resumo.test.ts`) e `build`
+  confirmados limpos.
 
 ## Regras invariantes (não podem quebrar)
 

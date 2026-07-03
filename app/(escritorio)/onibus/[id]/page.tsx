@@ -127,6 +127,17 @@ export default async function VeiculoDetalhePage({
   const podeEditar = usuario.papel === "gerente" || usuario.papel === "administrador";
   const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
+  // Mesmo filtro resolvido usado na tela (período + motorista; veículo já
+  // vem fixo por esta rota) — o export nunca pode divergir do que está na
+  // tela, mesmo que "hoje" mude entre o carregamento da página e o clique.
+  const paramsExport = new URLSearchParams();
+  paramsExport.set("de", periodo.de);
+  paramsExport.set("ate", periodo.ate);
+  paramsExport.set("veiculo_id", veiculo.id);
+  if (filtros.motoristaId) paramsExport.set("motorista_id", filtros.motoristaId);
+  if (filtros.motoristaNomeLivre) paramsExport.set("motorista_nome", filtros.motoristaNomeLivre);
+  const queryExport = paramsExport.toString();
+
   return (
     <div className="flex flex-col gap-8">
       <div className="flex items-center justify-between">
@@ -139,6 +150,21 @@ export default async function VeiculoDetalhePage({
       <Suspense fallback={<div className="h-[92px] rounded-2xl border border-navy-800 bg-navy-900" />}>
         <FiltrosAbastecimento opcoesMotorista={opcoesMotorista} />
       </Suspense>
+
+      <div className="-mt-4 flex justify-end gap-2">
+        <a
+          href={`/api/export?${queryExport}&formato=xlsx`}
+          className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+        >
+          Exportar Excel
+        </a>
+        <a
+          href={`/api/export?${queryExport}&formato=pdf`}
+          className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+        >
+          Exportar PDF
+        </a>
+      </div>
 
       <ResumoEstatisticas estatisticas={estatisticas} periodoTexto={periodoTexto} />
 

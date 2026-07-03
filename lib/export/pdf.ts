@@ -2,6 +2,7 @@ import "server-only";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { formatarDataBr, formatarMoeda } from "@/lib/formatacao";
+import type { EstatisticasVeiculo } from "@/lib/onibus/estatisticas";
 import type { CabecalhoExport, RegistroExport, ResumoExport } from "./tipos";
 import type { FotoBaixada } from "@/lib/midias";
 
@@ -19,7 +20,10 @@ export function gerarPdf(
   cabecalho: CabecalhoExport,
   registros: RegistroExport[],
   resumo: ResumoExport,
-  fotos: Map<number, FotoBaixada>
+  fotos: Map<number, FotoBaixada>,
+  // Só presente no export de dentro da aba de um ônibus específico — ver
+  // mesma observação em lib/export/excel.ts.
+  medias?: EstatisticasVeiculo
 ): Buffer {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const largura = doc.internal.pageSize.getWidth();
@@ -104,7 +108,19 @@ export function gerarPdf(
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- jspdf-autotable estende o doc dinamicamente, sem tipo próprio pra isso
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
+  let finalY = (doc as any).lastAutoTable.finalY + 10;
+
+  // Espaço estimado pro bloco de resumo (+ médias, quando presentes) — se
+  // não couber no que sobrou da página, começa uma página nova em vez de
+  // estourar a margem inferior (jsPDF não quebra texto solto sozinho, só
+  // linhas de autoTable).
+  const alturaEstimada = 16 + (medias ? 8 * 5 : 5 * 5);
+  const alturaPagina = doc.internal.pageSize.getHeight();
+  if (finalY + alturaEstimada > alturaPagina - 10) {
+    doc.addPage();
+    finalY = 20;
+  }
+
   doc.setTextColor(20, 20, 20);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
@@ -115,12 +131,43 @@ export function gerarPdf(
   doc.setTextColor(...CINZA_TEXTO);
   const resumoLinhas = [
     `Registros: ${resumo.quantidadeRegistros}`,
+    `Total de KM rodado: ${resumo.totalKmRodado} km`,
     `Total de litros: ${resumo.totalLitros.toFixed(1)} L`,
     `Total gasto: ${formatarMoeda(resumo.totalValor)}`,
     `Preço médio por litro: ${resumo.precoMedioLitro != null ? formatarMoeda(resumo.precoMedioLitro) : "—"}`,
     `Consumo médio: ${resumo.consumoMedioKml != null ? `${resumo.consumoMedioKml.toFixed(2)} km/L` : "—"}`,
   ];
   resumoLinhas.forEach((linha, indice) => doc.text(linha, 10, finalY + 6 + indice * 5));
+
+  if (medias) {
+    const yMedias = finalY + 6 + resumoLinhas.length * 5 + 6;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(20, 20, 20);
+    doc.text("Médias do veículo no período filtrado", 10, yMedias);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CINZA_TEXTO);
+    const linhasMedias = [
+      `Consumo médio (km/L): ${
+        medias.consumoMedioKml != null
+          ? `${medias.consumoMedioKml.toFixed(2)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Custo médio por km (R$/km): ${
+        medias.custoMedioPorKm != null
+          ? `${formatarMoeda(medias.custoMedioPorKm)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—"
+      }`,
+      `Gasto médio por abastecimento (R$): ${
+        medias.gastoMedioPorAbastecimento != null
+          ? `${formatarMoeda(medias.gastoMedioPorAbastecimento)} (sobre ${medias.totalAbastecimentos} registro(s))`
+          : "—"
+      }`,
+    ];
+    linhasMedias.forEach((linha, indice) => doc.text(linha, 10, yMedias + 6 + indice * 5));
+  }
 
   return Buffer.from(doc.output("arraybuffer"));
 }

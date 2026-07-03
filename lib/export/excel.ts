@@ -1,6 +1,7 @@
 import "server-only";
 import ExcelJS from "exceljs";
 import { formatarDataBr, formatarMoeda } from "@/lib/formatacao";
+import type { EstatisticasVeiculo } from "@/lib/onibus/estatisticas";
 import type { CabecalhoExport, RegistroExport, ResumoExport } from "./tipos";
 
 // Paleta navy/ciano — mesma usada no LuckFrota (produto irmão, ver
@@ -17,7 +18,14 @@ const FORMATO_MOEDA = '"R$"#,##0.00';
 export async function gerarExcel(
   cabecalho: CabecalhoExport,
   registros: RegistroExport[],
-  resumo: ResumoExport
+  resumo: ResumoExport,
+  // Só presente no export de dentro da aba de um ônibus específico (um
+  // único veículo filtrado) — as mesmas 3 médias que já aparecem nos cards
+  // da tela (lib/onibus/estatisticas.ts, mesma função, mesmo dado), pra
+  // nunca divergir do que o usuário está vendo. `undefined` no export geral
+  // do dashboard, onde "consumo médio de vários veículos juntos" não faz o
+  // mesmo sentido.
+  medias?: EstatisticasVeiculo
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "LuckTank";
@@ -102,6 +110,7 @@ export async function gerarExcel(
   // tabela sem precisar trocar de aba.
   const totaisRow = sheet.addRow({
     data: "TOTAIS",
+    kmRodado: resumo.totalKmRodado,
     litros: resumo.totalLitros,
     total: resumo.totalValor,
   });
@@ -129,6 +138,7 @@ export async function gerarExcel(
     ["Período", cabecalho.periodoTexto],
     ["Filtros aplicados", cabecalho.filtrosTexto],
     ["Quantidade de registros", resumo.quantidadeRegistros],
+    ["Total de KM rodado", `${resumo.totalKmRodado} km`],
     ["Total de litros", `${resumo.totalLitros.toFixed(1)} L`],
     ["Total gasto", formatarMoeda(resumo.totalValor)],
     [
@@ -143,6 +153,37 @@ export async function gerarExcel(
   for (const [rotulo, valor] of linhas) {
     const row = resumoSheet.addRow([rotulo, valor]);
     row.getCell(1).font = { bold: true };
+  }
+
+  if (medias) {
+    resumoSheet.addRow([]);
+    const tituloMedias = resumoSheet.addRow(["Médias do veículo no período filtrado"]);
+    tituloMedias.font = { bold: true, size: 12, color: { argb: NAVY } };
+
+    const linhasMedias: [string, string | number][] = [
+      [
+        "Consumo médio (km/L)",
+        medias.consumoMedioKml != null
+          ? `${medias.consumoMedioKml.toFixed(2)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—",
+      ],
+      [
+        "Custo médio por km (R$/km)",
+        medias.custoMedioPorKm != null
+          ? `${formatarMoeda(medias.custoMedioPorKm)} (sobre ${medias.abastecimentosComKmValido} registro(s) válido(s))`
+          : "—",
+      ],
+      [
+        "Gasto médio por abastecimento (R$)",
+        medias.gastoMedioPorAbastecimento != null
+          ? `${formatarMoeda(medias.gastoMedioPorAbastecimento)} (sobre ${medias.totalAbastecimentos} registro(s))`
+          : "—",
+      ],
+    ];
+    for (const [rotulo, valor] of linhasMedias) {
+      const row = resumoSheet.addRow([rotulo, valor]);
+      row.getCell(1).font = { bold: true };
+    }
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

@@ -16,6 +16,10 @@ import { gerarPdf } from "@/lib/export/pdf";
 import { calcularResumoExport } from "@/lib/export/resumo";
 import { gerarNomeArquivoExport } from "@/lib/export/nome-arquivo";
 import type { CabecalhoExport, RegistroExport } from "@/lib/export/tipos";
+import {
+  calcularEstatisticasVeiculo,
+  type AbastecimentoParaEstatistica,
+} from "@/lib/onibus/estatisticas";
 
 // Export Excel/PDF do dashboard — usa EXATAMENTE a mesma leitura de filtros
 // (parseFiltrosAbastecimento/resolverPeriodo/aplicarFiltrosQuery) do
@@ -128,7 +132,26 @@ export async function GET(request: NextRequest) {
     filtrosTexto,
   };
 
-  const nomeArquivo = gerarNomeArquivoExport(cabecalho.empresaNome, periodo, formato);
+  // Só quando o export está filtrado por UM veículo específico (aba do
+  // ônibus): calcula as mesmas 3 médias que já aparecem nos cards da tela
+  // (calcularEstatisticasVeiculo, exatamente a mesma função — nunca pode
+  // divergir do que a tela mostra) e troca o nome do arquivo pra
+  // "LuckTank_<prefixo>_<placa>_<período>" em vez do nome da empresa.
+  const veiculoFiltrado = filtros.veiculoId
+    ? veiculos.find((v) => v.id === filtros.veiculoId)
+    : undefined;
+
+  const medias = veiculoFiltrado
+    ? calcularEstatisticasVeiculo(lista as AbastecimentoParaEstatistica[])
+    : undefined;
+
+  const nomeArquivo = veiculoFiltrado
+    ? gerarNomeArquivoExport(
+        [veiculoFiltrado.prefixo ?? "", veiculoFiltrado.placa],
+        periodo,
+        formato
+      )
+    : gerarNomeArquivoExport([cabecalho.empresaNome], periodo, formato);
 
   if (formato === "pdf") {
     // Só baixa os bytes das fotos quando o formato é PDF (o Excel só usa um
@@ -145,7 +168,7 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    const buffer = gerarPdf(cabecalho, registros, resumo, fotos);
+    const buffer = gerarPdf(cabecalho, registros, resumo, fotos, medias);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/pdf",
@@ -154,7 +177,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const buffer = await gerarExcel(cabecalho, registros, resumo);
+  const buffer = await gerarExcel(cabecalho, registros, resumo, medias);
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

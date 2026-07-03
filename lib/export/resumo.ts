@@ -20,6 +20,7 @@ export function calcularResumoExport(registros: RegistroExport[]): ResumoExport 
   return {
     totalLitros,
     totalValor,
+    totalKmRodado: somaKmValidos,
     precoMedioLitro,
     consumoMedioKml,
     quantidadeRegistros: registros.length,

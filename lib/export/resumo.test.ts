@@ -27,6 +27,7 @@ describe("calcularResumoExport", () => {
     expect(calcularResumoExport([])).toEqual({
       totalLitros: 0,
       totalValor: 0,
+      totalKmRodado: 0,
       precoMedioLitro: null,
       consumoMedioKml: null,
       quantidadeRegistros: 0,
@@ -42,6 +43,7 @@ describe("calcularResumoExport", () => {
     expect(resumo.totalLitros).toBe(100);
     expect(resumo.totalValor).toBe(550);
     expect(resumo.precoMedioLitro).toBeCloseTo(5.5);
+    expect(resumo.totalKmRodado).toBe(200); // 100 + 100 (default do helper `registro`)
   });
 
   it("consumo médio é soma dos km rodados / soma dos litros (não média das médias)", () => {
@@ -58,6 +60,7 @@ describe("calcularResumoExport", () => {
     expect(resumo.consumoMedioKml).not.toBeCloseTo(5.5);
     // soma/soma = (900+10)/(90+10) = 9.1
     expect(resumo.consumoMedioKml).toBeCloseTo(9.1);
+    expect(resumo.totalKmRodado).toBe(910);
   });
 
   it("registro sem km rodado válido entra no total de litros/valor, mas não no consumo médio", () => {
@@ -69,6 +72,7 @@ describe("calcularResumoExport", () => {
     expect(resumo.totalLitros).toBe(120);
     expect(resumo.totalValor).toBe(720);
     expect(resumo.consumoMedioKml).toBeCloseTo(10); // só o segundo registro conta: 200/20
+    expect(resumo.totalKmRodado).toBe(200); // idem — só o registro com km_rodado válido soma
   });
 
   it("kmRodado = 0 é tratado como inválido (mesma regra de estatisticas.ts)", () => {
@@ -76,5 +80,6 @@ describe("calcularResumoExport", () => {
     const resumo = calcularResumoExport(registros);
     expect(resumo.consumoMedioKml).toBeNull();
     expect(resumo.totalLitros).toBe(50);
+    expect(resumo.totalKmRodado).toBe(0);
   });
 });
