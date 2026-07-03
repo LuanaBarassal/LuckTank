@@ -782,6 +782,87 @@ veículo no escritório. **Sem mudança de schema nem de regra de cálculo** —
   erro/NaN — removido depois do teste, sem deixar lixo no banco.
 - `tsc`, `lint`, `test` (26 testes) e `build` confirmados limpos.
 
+## Melhorias de uso: filtros, galeria, foto no histórico e export
+
+Pedido do usuário pós-Fase 8, em 4 blocos independentes de schema (só camada
+de UI, queries de leitura e geração de arquivo) — implementados um de cada
+vez, com validação própria.
+
+- ✅ **Bloco 1 — Filtros (data + veículo + motorista) no dashboard e na aba
+  do ônibus.** `lib/filtros/periodo.ts` (função pura `calcularPeriodo`, 4
+  atalhos: hoje/7dias/esteMes/mesPassado, sempre em UTC pra não misturar
+  fuso — mesmo padrão de `lib/validacao/regras.ts`), testado com 7 casos
+  incluindo virada de mês/ano e ano bissexto. `lib/filtros/abastecimentos.ts`:
+  `parseFiltrosAbastecimento` (lê `de`/`ate`/`veiculo_id`/`motorista_id`/
+  `motorista_nome` da URL, nunca lança — formato inválido vira "ausente", já
+  que a URL é editável à mão), `resolverPeriodo` (sem `de`/`ate` na URL, o
+  período padrão é **"este mês"** — decisão de produto: sem isso, a página
+  abriria sempre sem recorte nenhum) e `aplicarFiltrosQuery` (encadeia
+  `.gte/.lte/.eq` de forma condicional, compartilhado entre dashboard, aba do
+  ônibus e o export do Bloco 4 — os três precisam ler o filtro exatamente do
+  mesmo jeito). `lib/filtros/opcoes.ts`: busca veículos/motoristas/nomes
+  livres da empresa inteira (nunca só o que aparece no período já filtrado,
+  senão o próprio seletor ficaria preso ao resultado que ele mesmo ainda vai
+  produzir).
+
+  **UI**: `components/escritorio/select-busca.tsx` (combobox mínimo,
+  hand-rolled — mesma filosofia de Button/Card/Input, sem lib externa) e
+  `components/escritorio/filtros-abastecimento.tsx` (Client Component único,
+  reaproveitado nos dois lugares — no dashboard recebe a lista de veículos e
+  mostra o seletor; na aba do ônibus não recebe `veiculos`, então o seletor
+  nem aparece, porque o veículo já é fixo pela rota). Escreve só na URL
+  (`router.push` com `URLSearchParams`) — quem filtra de verdade é o Server
+  Component da página, então a filtragem em si é 100% no servidor, nunca no
+  client. Motorista cadastrado e nome livre coexistem no mesmo seletor
+  (`id:<uuid>` vs `livre:<nome>` como valor interno), com "(não cadastrado)"
+  no rótulo dos nomes livres.
+
+  **Mudança de comportamento nas duas páginas** (decisão registrada aqui pra
+  não se perder): os cards de resumo do dashboard, que antes eram fixos em
+  "hoje" (independente de qualquer filtro), agora refletem o período
+  filtrado ("Litros no período", "Valor gasto no período", etc.) — manter um
+  card não-filtrável ao lado de gráficos filtráveis seria inconsistente. Na
+  aba do ônibus, as 3 médias do "Relatório de consumo por veículo" (Fase
+  pós-8), que antes eram sempre sobre **todo o histórico**, agora são sobre o
+  **período filtrado** (rótulo mudou pra deixar isso explícito) — pedido
+  explícito do usuário neste bloco. Como o padrão sem filtro é "este mês", um
+  veículo com histórico só do mês corrente não muda de número nenhum (foi o
+  caso validado abaixo); histórico mais antigo precisa expandir o período
+  (atalho "Mês passado" ou datas manuais) pra aparecer nas médias.
+
+  Estado vazio unificado: "Nenhum abastecimento no período/filtro
+  selecionado." em todo card/gráfico/tabela que zera, substituindo o antigo
+  "Sem dados suficientes ainda." (que não distinguia "não há dado nenhum" de
+  "o filtro não bateu com nada").
+
+  **Validado com 44 testes automatizados** (18 novos: 7 de `periodo.ts`,
+  11 de `abastecimentos.ts` incluindo um query builder falso pra confirmar a
+  cadeia `gte→lte→eq` sem precisar de banco) e **contra o Supabase real do
+  projeto, no navegador**, logado como o administrador real da Expresso
+  Mundial: filtro combinado veículo (`EXM1A23`) + motorista nome livre
+  (`Roberto Alves`) no dashboard retornou exatamente 1 abastecimento
+  (150L/R$900/R$6,00 por litro — bate com o banco), URL refletiu
+  `?veiculo_id=...&motorista_nome=Roberto+Alves`, e recarregar a URL do zero
+  restaurou o mesmo estado (confirma que é compartilhável); atalho "Mês
+  passado" (sem abastecimento nenhum no período) mostrou o estado vazio em
+  todos os 5 gráficos; "Limpar filtros" voltou ao padrão "este mês" com os
+  13 registros. Na aba do ônibus, filtro por motorista cadastrado (Marcos
+  Vieira, via `motorista_id`) isolou 1 registro e recalculou as médias
+  corretamente (8.17 km/L, R$0,76/km, R$372,00 — bate com o registro
+  individual). `tsc`, `lint`, `test` (44) e `build` confirmados limpos.
+
+  **Achado lateral, não relacionado a este bloco** (registrado aqui pra não
+  se perder, nenhuma ação tomada): o veículo real `EXM1A23` ainda tem, em
+  produção, vários abastecimentos com nomes claramente de teste ("Teste
+  Capacidade", "Teste Nota Duplicada", "Teste Foto A/B", "Teste Consumo
+  Alto", "Teste Desproporcional", "Teste Queda Rede", "Teste Origem") —
+  parecem sobras da validação da Fase 6 (que rodou os cenários de alerta
+  direto nesse veículo real, antes da disciplina de "sempre limpar depois"
+  virar prática consistente a partir da Fase 8). Diferente do veículo de
+  teste dedicado (placa `TST...`) usado na validação automatizada pós-Fase
+  8, que foi limpo por completo. Não apaguei nada — é uma decisão do dono do
+  produto, não algo pra um agente decidir sozinho.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

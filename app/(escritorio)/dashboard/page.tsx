@@ -1,7 +1,15 @@
+import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardTitle } from "@/components/ui/card";
 import GraficoBarra from "@/components/escritorio/grafico-barra";
-import { formatarMoeda } from "@/lib/formatacao";
+import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
+import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
+import {
+  parseFiltrosAbastecimento,
+  resolverPeriodo,
+  aplicarFiltrosQuery,
+} from "@/lib/filtros/abastecimentos";
+import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
 import {
   agregarGastoPorDia,
   agregarPrecoMedioPorDia,
@@ -11,55 +19,50 @@ import {
   type AbastecimentoAgregavel,
 } from "@/lib/dashboard/agregacoes";
 
-const JANELA_DIAS = 90;
-
 function SemDados() {
   return (
     <div className="flex flex-col items-center justify-center gap-1 py-10 text-center">
       <span className="text-2xl">📊</span>
-      <p className="text-sm text-slate-400">Sem dados suficientes ainda.</p>
+      <p className="text-sm text-slate-400">Nenhum abastecimento no período/filtro selecionado.</p>
     </div>
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   const supabase = await createClient();
 
-  const dataLimite = new Date();
-  dataLimite.setDate(dataLimite.getDate() - JANELA_DIAS);
+  const filtros = parseFiltrosAbastecimento(searchParams);
+  const periodo = resolverPeriodo(filtros);
 
-  const { data: abastecimentos } = await supabase
-    .from("abastecimentos")
-    .select(
-      "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome"
-    )
-    .eq("status", "ativo")
-    .gte("data_abastecimento", dataLimite.toISOString().slice(0, 10))
-    .order("data_abastecimento", { ascending: true });
+  const { veiculos, opcoesMotorista } = await buscarOpcoesFiltro(supabase);
+
+  const { data: abastecimentos } = await aplicarFiltrosQuery(
+    supabase
+      .from("abastecimentos")
+      .select(
+        "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome"
+      )
+      .eq("status", "ativo"),
+    filtros,
+    periodo
+  ).order("data_abastecimento", { ascending: true });
 
   const lista: AbastecimentoAgregavel[] = abastecimentos ?? [];
 
-  const idsVeiculos = [...new Set(lista.map((a) => a.veiculo_id))];
-  const idsMotoristas = [
-    ...new Set(lista.map((a) => a.motorista_id).filter((id): id is string => !!id)),
-  ];
+  const mapaPlacas = new Map(veiculos.map((v) => [v.id, v.placa]));
+  const mapaMotoristas = new Map(
+    opcoesMotorista
+      .filter((o) => o.value.startsWith("id:"))
+      .map((o) => [o.value.slice(3), o.label])
+  );
 
-  const { data: veiculos } = idsVeiculos.length
-    ? await supabase.from("veiculos").select("id, placa").in("id", idsVeiculos)
-    : { data: [] as { id: string; placa: string }[] };
-
-  const { data: motoristas } = idsMotoristas.length
-    ? await supabase.from("motoristas").select("id, nome").in("id", idsMotoristas)
-    : { data: [] as { id: string; nome: string }[] };
-
-  const mapaPlacas = new Map((veiculos ?? []).map((v) => [v.id, v.placa]));
-  const mapaMotoristas = new Map((motoristas ?? []).map((m) => [m.id, m.nome]));
-
-  const hoje = new Date().toISOString().slice(0, 10);
-  const doDia = lista.filter((a) => a.data_abastecimento === hoje);
-  const litrosHoje = doDia.reduce((soma, a) => soma + a.litros, 0);
-  const valorHoje = doDia.reduce((soma, a) => soma + a.valor_total, 0);
-  const precoMedioHoje = litrosHoje > 0 ? valorHoje / litrosHoje : 0;
+  const litrosPeriodo = lista.reduce((soma, a) => soma + a.litros, 0);
+  const valorPeriodo = lista.reduce((soma, a) => soma + a.valor_total, 0);
+  const precoMedioPeriodo = litrosPeriodo > 0 ? valorPeriodo / litrosPeriodo : 0;
 
   const gastoPorDia = agregarGastoPorDia(lista);
   const precoMedioPorDia = agregarPrecoMedioPorDia(lista);
@@ -67,17 +70,26 @@ export default async function DashboardPage() {
   const consumoPorMotorista = agregarConsumoPorMotorista(lista, mapaMotoristas);
   const postosUtilizados = agregarPostosUtilizados(lista);
 
+  const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
+
   const RESUMO = [
-    { label: "Litros hoje", valor: `${litrosHoje.toFixed(1)} L` },
-    { label: "Valor gasto hoje", valor: formatarMoeda(valorHoje) },
-    { label: "Nº de abastecimentos", valor: String(doDia.length) },
-    { label: "Preço médio/litro", valor: formatarMoeda(precoMedioHoje) },
+    { label: "Litros no período", valor: `${litrosPeriodo.toFixed(1)} L` },
+    { label: "Valor gasto no período", valor: formatarMoeda(valorPeriodo) },
+    { label: "Nº de abastecimentos", valor: String(lista.length) },
+    { label: "Preço médio/litro", valor: formatarMoeda(precoMedioPeriodo) },
   ];
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="mb-6 font-title text-2xl font-bold text-white">Dashboard</h1>
+
+        <Suspense fallback={<div className="h-[132px] rounded-2xl border border-navy-800 bg-navy-900" />}>
+          <FiltrosAbastecimento veiculos={veiculos} opcoesMotorista={opcoesMotorista} />
+        </Suspense>
+
+        <p className="mb-4 mt-3 text-xs text-slate-500">Período: {periodoTexto}</p>
+
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {RESUMO.map((item) => (
             <div key={item.label} className="rounded-2xl border border-navy-800 bg-navy-900 p-5 shadow-sm">
@@ -90,7 +102,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card variant="dark">
-          <CardTitle variant="dark">Gasto por dia (últimos {JANELA_DIAS} dias)</CardTitle>
+          <CardTitle variant="dark">Gasto por dia</CardTitle>
           {gastoPorDia.length ? (
             <GraficoBarra dados={gastoPorDia} chaveX="data" chaveY="valor" corBarra="#00d4ff" />
           ) : (

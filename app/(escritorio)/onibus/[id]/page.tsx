@@ -1,12 +1,20 @@
+import { Suspense } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import VeiculoForm from "@/components/escritorio/veiculo-form";
 import VeiculoAtivoToggle from "@/components/escritorio/veiculo-ativo-toggle";
+import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr } from "@/lib/formatacao";
 import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "@/lib/onibus/estatisticas";
+import {
+  parseFiltrosAbastecimento,
+  resolverPeriodo,
+  aplicarFiltrosQuery,
+} from "@/lib/filtros/abastecimentos";
+import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
 import { cn } from "@/lib/utils";
 
 const LIMITE_TABELA = 50;
@@ -14,7 +22,13 @@ const LIMITE_TABELA = 50;
 type NivelAlerta = "info" | "atencao" | "critico";
 const PRIORIDADE_NIVEL: Record<NivelAlerta, number> = { info: 0, atencao: 1, critico: 2 };
 
-export default async function VeiculoDetalhePage({ params }: { params: { id: string } }) {
+export default async function VeiculoDetalhePage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
   const usuario = await getUsuarioAtual();
   if (!usuario) redirect("/login");
 
@@ -27,39 +41,48 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
 
   if (!veiculo) notFound();
 
-  // Estatísticas são sobre TODO o histórico do veículo, não só a página
-  // exibida na tabela — por isso é uma query separada, sem limit, só com as
-  // colunas que a agregação realmente usa (payload pequeno mesmo pra
-  // veículos com muitos anos de histórico).
-  const { data: historicoCompleto } = await supabase
-    .from("abastecimentos")
-    .select("data_abastecimento, km_rodado, litros, valor_total")
-    .eq("veiculo_id", veiculo.id)
-    .eq("status", "ativo");
+  // Veículo já vem fixo pela rota — o filtro de veículo da barra nem
+  // aparece aqui (só data + motorista); a lista de motoristas ainda cobre a
+  // empresa inteira, não só quem já abasteceu este veículo específico.
+  const filtros = { ...parseFiltrosAbastecimento(searchParams), veiculoId: veiculo.id };
+  const periodo = resolverPeriodo(filtros);
+  const { opcoesMotorista } = await buscarOpcoesFiltro(supabase);
 
-  const estatisticas = calcularEstatisticasVeiculo(
-    (historicoCompleto ?? []) as AbastecimentoParaEstatistica[]
+  // Estatísticas são sobre o período filtrado (não mais "todo o histórico" —
+  // ver Bloco 1 de filtros no PROJETO.md), mas ainda sem `limit`: a conta de
+  // soma/soma precisa de todos os registros do período, não só os que
+  // aparecem na página da tabela.
+  const { data: historicoFiltrado } = await aplicarFiltrosQuery(
+    supabase
+      .from("abastecimentos")
+      .select("data_abastecimento, km_rodado, litros, valor_total")
+      .eq("status", "ativo"),
+    filtros,
+    periodo
   );
 
-  const { data: abastecimentos } = await supabase
-    .from("abastecimentos")
-    .select(
-      "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, motorista_id, motorista_nome_livre"
-    )
-    .eq("veiculo_id", veiculo.id)
-    .eq("status", "ativo")
+  const estatisticas = calcularEstatisticasVeiculo(
+    (historicoFiltrado ?? []) as AbastecimentoParaEstatistica[]
+  );
+
+  const { data: abastecimentos } = await aplicarFiltrosQuery(
+    supabase
+      .from("abastecimentos")
+      .select(
+        "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, motorista_id, motorista_nome_livre"
+      )
+      .eq("status", "ativo"),
+    filtros,
+    periodo
+  )
     .order("criado_em", { ascending: false })
     .limit(LIMITE_TABELA);
 
-  const idsMotoristas = [
-    ...new Set((abastecimentos ?? []).map((a) => a.motorista_id).filter((id): id is string => !!id)),
-  ];
-
-  const { data: motoristas } = idsMotoristas.length
-    ? await supabase.from("motoristas").select("id, nome").in("id", idsMotoristas)
-    : { data: [] as { id: string; nome: string }[] };
-
-  const mapaMotoristas = new Map((motoristas ?? []).map((m) => [m.id, m.nome]));
+  const mapaMotoristas = new Map(
+    opcoesMotorista
+      .filter((o) => o.value.startsWith("id:"))
+      .map((o) => [o.value.slice(3), o.label])
+  );
 
   // Nível mais alto de alerta por abastecimento — um registro pode ter mais
   // de um alerta (ex.: capacidade do tanque + consumo fora da faixa juntos,
@@ -83,6 +106,7 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
   }
 
   const podeEditar = usuario.papel === "gerente" || usuario.papel === "administrador";
+  const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -91,7 +115,11 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
         {podeEditar && <VeiculoAtivoToggle id={veiculo.id} ativo={veiculo.ativo} />}
       </div>
 
-      <ResumoEstatisticas estatisticas={estatisticas} />
+      <Suspense fallback={<div className="h-[92px] rounded-2xl border border-navy-800 bg-navy-900" />}>
+        <FiltrosAbastecimento opcoesMotorista={opcoesMotorista} />
+      </Suspense>
+
+      <ResumoEstatisticas estatisticas={estatisticas} periodoTexto={periodoTexto} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card variant="dark">
@@ -144,14 +172,14 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
           Histórico de abastecimentos
           {(abastecimentos?.length ?? 0) === LIMITE_TABELA && (
             <span className="ml-2 text-xs font-normal text-slate-500">
-              (últimos {LIMITE_TABELA} — as médias acima consideram todo o histórico)
+              (últimos {LIMITE_TABELA} do período filtrado — as médias acima consideram todo o período, não só estas linhas)
             </span>
           )}
         </CardTitle>
         {!abastecimentos?.length ? (
           <div className="flex flex-col items-center gap-1 py-6 text-center">
             <span className="text-2xl">⛽</span>
-            <p className="text-sm text-slate-400">Nenhum abastecimento registrado ainda.</p>
+            <p className="text-sm text-slate-400">Nenhum abastecimento no período/filtro selecionado.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -228,27 +256,29 @@ export default async function VeiculoDetalhePage({ params }: { params: { id: str
   );
 }
 
-function ResumoEstatisticas({ estatisticas }: { estatisticas: ReturnType<typeof calcularEstatisticasVeiculo> }) {
+function ResumoEstatisticas({
+  estatisticas,
+  periodoTexto,
+}: {
+  estatisticas: ReturnType<typeof calcularEstatisticasVeiculo>;
+  periodoTexto: string;
+}) {
   if (estatisticas.totalAbastecimentos === 0) {
     return (
       <Card variant="dark">
         <div className="flex flex-col items-center gap-1 py-4 text-center">
           <span className="text-2xl">📊</span>
-          <p className="text-sm text-slate-400">Sem dados suficientes ainda.</p>
+          <p className="text-sm text-slate-400">Nenhum abastecimento no período/filtro selecionado.</p>
         </div>
       </Card>
     );
   }
 
-  const periodoTexto = estatisticas.periodo
-    ? `${formatarDataBr(estatisticas.periodo.inicio)} a ${formatarDataBr(estatisticas.periodo.fim)}`
-    : "—";
-
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <CardEstatistica
-          label="Consumo médio"
+          label="Consumo médio no período filtrado"
           valor={estatisticas.consumoMedioKml != null ? `${estatisticas.consumoMedioKml.toFixed(2)} km/L` : null}
           rodape={
             estatisticas.abastecimentosComKmValido > 0
@@ -257,7 +287,7 @@ function ResumoEstatisticas({ estatisticas }: { estatisticas: ReturnType<typeof 
           }
         />
         <CardEstatistica
-          label="Custo médio por km"
+          label="Custo médio por km no período filtrado"
           valor={estatisticas.custoMedioPorKm != null ? formatarMoeda(estatisticas.custoMedioPorKm) : null}
           rodape={
             estatisticas.abastecimentosComKmValido > 0
@@ -266,13 +296,13 @@ function ResumoEstatisticas({ estatisticas }: { estatisticas: ReturnType<typeof 
           }
         />
         <CardEstatistica
-          label="Gasto médio por abastecimento"
+          label="Gasto médio por abastecimento no período filtrado"
           valor={formatarMoeda(estatisticas.gastoMedioPorAbastecimento ?? 0)}
           rodape={`média sobre ${estatisticas.totalAbastecimentos} registro(s)`}
         />
       </div>
       <p className="text-xs text-slate-500">
-        Período coberto: {periodoTexto} · {estatisticas.totalAbastecimentos} abastecimento(s) no total.
+        Período filtrado: {periodoTexto} · {estatisticas.totalAbastecimentos} abastecimento(s) no período.
         {estatisticas.abastecimentosComKmValido < estatisticas.totalAbastecimentos && (
           <>
             {" "}
