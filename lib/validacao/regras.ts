@@ -25,6 +25,10 @@ export interface ContextoAvaliacao {
   };
   veiculo: {
     capacidadeTanqueLitros: number | null;
+    // Consumo esperado (manual/ficha técnica do fabricante), em km/L —
+    // cadastrado pelo gestor da frota (veiculos.consumo_referencia_kml).
+    // Null quando o veículo ainda não tem esse valor preenchido.
+    consumoReferenciaKml: number | null;
   };
   // Resolvidos via query fora deste módulo (RLS/JOIN não pertencem a uma função pura).
   notaDuplicada: boolean;
@@ -118,6 +122,47 @@ function avaliarLitrosDesproporcionais(ctx: ContextoAvaliacao): AlertaGerado | n
   };
 }
 
+// Consumo médio: comparação com o valor de FÁBRICA (ficha técnica do
+// modelo), não com o histórico do próprio veículo — complementar à regra
+// acima (avaliarConsumoForaDaFaixa), que é RELATIVA (precisa de
+// abastecimentos anteriores do mesmo veículo pra ter uma média com que
+// comparar). Esta regra é ABSOLUTA: não depende de nenhum histórico, então
+// é a ÚNICA cobertura de consumo que um veículo novo tem antes de acumular
+// abastecimento suficiente pra regra histórica disparar sozinha. Tolerância
+// mais larga que os 25% da regra histórica (aqui, 35%) porque desvio contra
+// a ficha técnica é naturalmente maior que desvio contra o próprio
+// histórico — rota, carga, ar-condicionado, trecho urbano x rodoviário
+// variam mais entre "este abastecimento x o manual" do que entre "este
+// abastecimento x os últimos 5 do mesmo veículo". Compara módulo do desvio
+// (não só "pior que a referência"): tanto consumo muito PIOR quanto muito
+// MELHOR que o esperado são sinais válidos de suspeita — consumo aparente
+// muito melhor pode ser litros subdeclarados (motorista reporta menos
+// litros do que realmente colocou, escondendo uso pessoal do combustível
+// da empresa), então também merece atenção, não só o sentido "gastou mais".
+// Pode disparar junto com `consumo_fora_da_faixa_historica` pro mesmo
+// evento — são complementares, não mutuamente exclusivas (mesmo padrão já
+// documentado nas outras combinações deste arquivo).
+const TOLERANCIA_DESVIO_CONSUMO_REFERENCIA = 0.35; // 35% de desvio da referência de fábrica
+
+function avaliarConsumoForaDaReferenciaFabricante(ctx: ContextoAvaliacao): AlertaGerado | null {
+  const { consumoKml } = ctx.abastecimento;
+  const referencia = ctx.veiculo.consumoReferenciaKml;
+  if (consumoKml == null || referencia == null || referencia <= 0) return null;
+
+  const desvio = Math.abs(consumoKml - referencia) / referencia;
+  if (desvio <= TOLERANCIA_DESVIO_CONSUMO_REFERENCIA) return null;
+
+  return {
+    tipoRegra: "consumo_fora_da_referencia_fabricante",
+    nivel: "atencao",
+    detalhes: {
+      consumo_kml: consumoKml,
+      consumo_referencia_kml: referencia,
+      desvio_percentual: Number((desvio * 100).toFixed(1)),
+    },
+  };
+}
+
 // Tolerância pra regra de EXIF — foto tirada mais de 48h ANTES da data
 // informada do abastecimento é suspeita de reaproveitamento (galeria antiga,
 // comprovante de outro dia). Não penaliza foto tirada DEPOIS da data
@@ -161,6 +206,7 @@ export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
     avaliarNotaDuplicada(ctx),
     avaliarFotoDuplicada(ctx),
     avaliarConsumoForaDaFaixa(ctx),
+    avaliarConsumoForaDaReferenciaFabricante(ctx),
     avaliarLitrosDesproporcionais(ctx),
     avaliarFotoAntigaOuReaproveitada(ctx),
   ].filter((alerta): alerta is AlertaGerado => alerta !== null);

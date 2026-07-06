@@ -8,6 +8,7 @@ export const ROTULO_REGRA: Record<string, string> = {
   nota_fiscal_duplicada: "Nota fiscal duplicada",
   foto_comprovante_duplicada: "Foto do comprovante duplicada",
   consumo_fora_da_faixa_historica: "Consumo fora da faixa histórica",
+  consumo_fora_da_referencia_fabricante: "Consumo fora da referência de fábrica",
   litros_desproporcionais_ao_km_rodado: "Litros desproporcionais ao KM rodado",
   foto_antiga_ou_reaproveitada: "Foto do comprovante mais antiga que o esperado",
 };

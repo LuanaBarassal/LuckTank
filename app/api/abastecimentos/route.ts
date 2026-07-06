@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
   const { data: veiculo } = await admin
     .from("veiculos")
-    .select("id, empresa_id, km_atual, ativo, capacidade_tanque_litros")
+    .select("id, empresa_id, km_atual, ativo, capacidade_tanque_litros, consumo_referencia_kml")
     .eq("qr_token", qrToken)
     .single();
 
@@ -244,6 +244,7 @@ async function avaliarEGravarAlertas(params: {
     id: string;
     empresa_id: string;
     capacidade_tanque_litros: number | null;
+    consumo_referencia_kml: number | null;
   };
   abastecimento: {
     id: string;
@@ -321,6 +322,7 @@ async function avaliarEGravarAlertas(params: {
     },
     veiculo: {
       capacidadeTanqueLitros: veiculo.capacidade_tanque_litros,
+      consumoReferenciaKml: veiculo.consumo_referencia_kml,
     },
     notaDuplicada,
     fotoDuplicada,

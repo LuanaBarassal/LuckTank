@@ -22,6 +22,7 @@ function contextoBase(): ContextoAvaliacao {
     },
     veiculo: {
       capacidadeTanqueLitros: 300,
+      consumoReferenciaKml: null,
     },
     notaDuplicada: false,
     fotoDuplicada: false,
@@ -138,6 +139,97 @@ describe("avaliarConsumoForaDaFaixa", () => {
     ctx.abastecimento.consumoKml = null;
     const alertas = avaliarAbastecimento(ctx);
     expect(alertas.find((a) => a.tipoRegra === "consumo_fora_da_faixa_historica")).toBeUndefined();
+  });
+});
+
+describe("avaliarConsumoForaDaReferenciaFabricante", () => {
+  it("não dispara quando o veículo não tem consumo de referência cadastrado", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.consumoKml = 100; // desvio absurdo, mas sem referência não há o que comparar
+    ctx.veiculo.consumoReferenciaKml = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(
+      alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante")
+    ).toBeUndefined();
+  });
+
+  it("não dispara dentro da tolerância de 35% de desvio", () => {
+    const ctx = contextoBase();
+    ctx.veiculo.consumoReferenciaKml = 8;
+    ctx.abastecimento.consumoKml = 10; // desvio = 25%, dentro dos 35%
+    const alertas = avaliarAbastecimento(ctx);
+    expect(
+      alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante")
+    ).toBeUndefined();
+  });
+
+  it("dispara atenção quando o consumo real é bem PIOR que a referência (>35%)", () => {
+    const ctx = contextoBase();
+    ctx.veiculo.consumoReferenciaKml = 8;
+    ctx.abastecimento.consumoKml = 5; // desvio = 37.5%
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+    expect(alerta?.detalhes).toEqual({
+      consumo_kml: 5,
+      consumo_referencia_kml: 8,
+      desvio_percentual: 37.5,
+    });
+  });
+
+  it("dispara atenção quando o consumo real é bem MELHOR que a referência (>35%) — possível litro subdeclarado", () => {
+    const ctx = contextoBase();
+    ctx.veiculo.consumoReferenciaKml = 8;
+    ctx.abastecimento.consumoKml = 11; // desvio = 37.5%, no sentido "melhor"
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+  });
+
+  it("não dispara no limite exato de 35%", () => {
+    const ctx = contextoBase();
+    // 20 e 13 dão desvio de exatamente 0.35 em ponto flutuante (7/20 é
+    // representável sem erro de arredondamento residual, diferente de
+    // "8 * 1.35" que acumula um erro de ~1e-16 e cruzaria o limiar).
+    ctx.veiculo.consumoReferenciaKml = 20;
+    ctx.abastecimento.consumoKml = 13;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(
+      alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante")
+    ).toBeUndefined();
+  });
+
+  it("não dispara quando o próprio abastecimento não tem consumo calculável", () => {
+    const ctx = contextoBase();
+    ctx.veiculo.consumoReferenciaKml = 8;
+    ctx.abastecimento.consumoKml = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(
+      alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante")
+    ).toBeUndefined();
+  });
+
+  it("trata consumo_referencia_kml <= 0 como 'não cadastrado' (dado inválido não deve disparar)", () => {
+    const ctx = contextoBase();
+    ctx.veiculo.consumoReferenciaKml = 0;
+    ctx.abastecimento.consumoKml = 100;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(
+      alertas.find((a) => a.tipoRegra === "consumo_fora_da_referencia_fabricante")
+    ).toBeUndefined();
+  });
+
+  it("dispara JUNTO com consumo_fora_da_faixa_historica pro mesmo evento (complementares, não exclusivas)", () => {
+    const ctx = contextoBase();
+    ctx.consumoMedioHistorico = 8; // regra histórica também vai disparar
+    ctx.veiculo.consumoReferenciaKml = 8;
+    ctx.abastecimento.consumoKml = 33; // foge muito das duas bases de comparação
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.map((a) => a.tipoRegra).sort()).toEqual(
+      ["consumo_fora_da_faixa_historica", "consumo_fora_da_referencia_fabricante"].sort()
+    );
   });
 });
 
