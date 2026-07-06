@@ -5,6 +5,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { registrarLog } from "@/lib/edicoes-log";
 import { convidarUsuarioSchema } from "@/lib/validacao/schemas";
+import { urlBaseAtual } from "@/lib/url-atual";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
 
@@ -25,8 +26,13 @@ export async function convidarUsuario(payload: unknown): Promise<Resultado<{ id:
 
   const admin = createAdminClient();
 
+  // redirectTo explícito — sem isso o Supabase manda pro "Site URL" padrão
+  // do projeto, que pode não ser onde /definir-senha mora neste ambiente
+  // (dev x preview x produção). Precisa estar na lista de "Redirect URLs"
+  // permitidas no painel do Supabase (Authentication > URL Configuration).
   const { data: convite, error: conviteError } = await admin.auth.admin.inviteUserByEmail(
-    parsed.data.email
+    parsed.data.email,
+    { redirectTo: `${await urlBaseAtual()}/definir-senha` }
   );
 
   if (conviteError || !convite.user) {

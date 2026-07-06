@@ -2,9 +2,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 // Rotas públicas: "/" (redirect pro login), fluxo do motorista (QR, sem
-// login) e a própria página de login. Tudo o mais é escritório e exige
-// sessão autenticada (RLS resolve empresa_id).
-const PUBLICAS = ["/", "/login", "/r", "/api/ocr", "/api/gemini", "/api/abastecimentos"];
+// login), a própria página de login, e /definir-senha (link de convite —
+// chega com os tokens só no HASH da URL, que nunca vai pro servidor; nesse
+// primeiro carregamento o middleware sempre veria "sem sessão", então essa
+// rota PRECISA ser pública, senão o middleware redireciona pro /login antes
+// do client conseguir ler o hash e completar o login). Tudo o mais é
+// escritório e exige sessão autenticada (RLS resolve empresa_id).
+const PUBLICAS = [
+  "/",
+  "/login",
+  "/definir-senha",
+  "/r",
+  "/api/ocr",
+  "/api/gemini",
+  "/api/abastecimentos",
+];
 
 function ehRotaPublica(pathname: string) {
   return PUBLICAS.some((rota) => pathname === rota || (rota !== "/" && pathname.startsWith(`${rota}/`)));

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ehDonoSistema } from "@/lib/auth/dono-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { criarEmpresaSchema } from "@/lib/validacao/schemas";
+import { urlBaseAtual } from "@/lib/url-atual";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
 
@@ -43,7 +44,8 @@ export async function criarEmpresa(payload: unknown): Promise<Resultado<{ id: st
   }
 
   const { data: convite, error: erroConvite } = await admin.auth.admin.inviteUserByEmail(
-    parsed.data.emailAdministrador
+    parsed.data.emailAdministrador,
+    { redirectTo: `${await urlBaseAtual()}/definir-senha` }
   );
 
   if (erroConvite || !convite.user) {
