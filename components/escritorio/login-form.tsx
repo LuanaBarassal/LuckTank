@@ -60,8 +60,6 @@ export default function LoginForm() {
             escritório, sem planilha.
           </p>
         </div>
-
-        <p className="relative z-10 text-sm text-slate-400">Expresso Mundial</p>
       </div>
 
       {/* Formulário */}

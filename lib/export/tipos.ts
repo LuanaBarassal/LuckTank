@@ -37,7 +37,7 @@ export interface ResumoExport {
 export interface CabecalhoExport {
   empresaNome: string;
   periodoTexto: string;
-  filtrosTexto: string; // ex.: "Veículo: EXM1A23 · Motorista: João da Silva" ou "Nenhum filtro adicional"
+  filtrosTexto: string; // ex.: "Veículo: ABC1D23 · Motorista: João da Silva" ou "Nenhum filtro adicional"
   // Só presente quando o export está filtrado por UM veículo específico
   // (aba do ônibus) — já formatado "prefixo · placa" (lib/formatacao.ts).
   veiculoLabel?: string;

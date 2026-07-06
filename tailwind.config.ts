@@ -11,12 +11,14 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
-        // Identidade da marca (Expresso Mundial / LuckTank): navy profundo é a
-        // cor estrutural (chrome do escritório, botão primário, cabeçalhos);
-        // ciano é o acento de ação/foco. `primary` é o alias usado pelos
-        // componentes de UI (Button/Input) nos dois contextos — motorista e
-        // escritório —, então mexer aqui rebate no app inteiro. Mesma paleta
-        // usada no LuckFrota (produto irmão), pra manter a família visual.
+        // Identidade da marca do próprio LuckTank (produto, não de um cliente
+        // específico): navy profundo é a cor estrutural (chrome do
+        // escritório, botão primário, cabeçalhos); ciano é o acento de
+        // ação/foco. `primary` é o alias usado pelos componentes de UI
+        // (Button/Input) nos dois contextos — motorista e escritório —,
+        // então mexer aqui rebate no app inteiro. Mesma paleta usada no
+        // LuckFrota (produto irmão, mesmo fornecedor), pra manter a família
+        // visual entre os dois produtos.
         primary: {
           50: "#eef2f8",
           100: "#d6e0ec",
