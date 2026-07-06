@@ -9,7 +9,12 @@ import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento"
 import FotoComprovante from "@/components/escritorio/foto-comprovante";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
-import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "@/lib/onibus/estatisticas";
+import {
+  calcularEstatisticasVeiculo,
+  compararConsumoComReferencia,
+  type AbastecimentoParaEstatistica,
+  type ComparativoConsumo,
+} from "@/lib/onibus/estatisticas";
 import {
   parseFiltrosAbastecimento,
   resolverPeriodo,
@@ -166,7 +171,14 @@ export default async function VeiculoDetalhePage({
         </a>
       </div>
 
-      <ResumoEstatisticas estatisticas={estatisticas} periodoTexto={periodoTexto} />
+      <ResumoEstatisticas
+        estatisticas={estatisticas}
+        periodoTexto={periodoTexto}
+        comparativoConsumo={compararConsumoComReferencia(
+          estatisticas.consumoMedioKml,
+          veiculo.consumo_referencia_kml
+        )}
+      />
 
       <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
         <Card variant="dark">
@@ -323,9 +335,11 @@ export default async function VeiculoDetalhePage({
 function ResumoEstatisticas({
   estatisticas,
   periodoTexto,
+  comparativoConsumo,
 }: {
   estatisticas: ReturnType<typeof calcularEstatisticasVeiculo>;
   periodoTexto: string;
+  comparativoConsumo: ComparativoConsumo;
 }) {
   if (estatisticas.totalAbastecimentos === 0) {
     return (
@@ -340,7 +354,7 @@ function ResumoEstatisticas({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         <CardEstatistica
           label="Consumo médio no período filtrado"
           valor={estatisticas.consumoMedioKml != null ? `${estatisticas.consumoMedioKml.toFixed(2)} km/L` : null}
@@ -364,6 +378,7 @@ function ResumoEstatisticas({
           valor={formatarMoeda(estatisticas.gastoMedioPorAbastecimento ?? 0)}
           rodape={`média sobre ${estatisticas.totalAbastecimentos} registro(s)`}
         />
+        <CardComparativoConsumo comparativo={comparativoConsumo} />
       </div>
       <p className="text-xs text-slate-500">
         Período filtrado: {periodoTexto} · {estatisticas.totalAbastecimentos} abastecimento(s) no período.
@@ -375,6 +390,63 @@ function ResumoEstatisticas({
           </>
         )}
       </p>
+    </div>
+  );
+}
+
+// Rótulo/cor por status — "pior" salta aos olhos (mesmo padrão semântico do
+// painel de alertas: crítico chama mais atenção que os outros); "sem
+// referência" é um convite pra cadastrar, não um erro.
+const ROTULO_STATUS_COMPARATIVO: Record<ComparativoConsumo["status"], string> = {
+  sem_referencia: "Sem referência cadastrada",
+  sem_dado_real: "Sem consumo real no período",
+  pior_que_referencia: "Pior que a referência",
+  dentro_do_esperado: "Dentro do esperado",
+  melhor_que_referencia: "Melhor que a referência",
+};
+
+function CardComparativoConsumo({ comparativo }: { comparativo: ComparativoConsumo }) {
+  const { status, referenciaKml, realKml, desvioPercentual } = comparativo;
+
+  if (status === "sem_referencia") {
+    return (
+      <div className="rounded-2xl border border-dashed border-navy-700 bg-navy-900 p-6">
+        <div className="text-sm text-slate-400">Consumo real x referência</div>
+        <div className="mt-2 text-sm text-slate-400">
+          Cadastre o consumo de referência (km/L) do modelo em &ldquo;Dados do veículo&rdquo; pra
+          comparar com o consumo real medido.
+        </div>
+      </div>
+    );
+  }
+
+  const badge =
+    status === "pior_que_referencia"
+      ? "bg-critico-500 text-white"
+      : status === "melhor_que_referencia"
+        ? "bg-sucesso-500/15 text-sucesso-400"
+        : "bg-atencao-500/15 text-atencao-400";
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border p-6",
+        status === "pior_que_referencia"
+          ? "border-critico-500/40 bg-critico-500/5"
+          : "border-navy-800 bg-navy-900"
+      )}
+    >
+      <div className="text-sm text-slate-400">Consumo real x referência</div>
+      <div className="mt-2 text-2xl font-bold text-white">
+        {realKml != null ? `${realKml.toFixed(2)} km/L` : "—"}
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        referência: {referenciaKml != null ? `${referenciaKml.toFixed(2)} km/L` : "—"}
+      </div>
+      <span className={cn("mt-3 inline-block rounded-full px-2 py-0.5 text-xs font-semibold", badge)}>
+        {ROTULO_STATUS_COMPARATIVO[status]}
+        {desvioPercentual != null && ` (${desvioPercentual > 0 ? "+" : ""}${desvioPercentual}%)`}
+      </span>
     </div>
   );
 }

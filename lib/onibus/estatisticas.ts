@@ -102,3 +102,60 @@ export function calcularEstatisticasVeiculo(
     totalKmRodado: somaKmRodadoValidos,
   };
 }
+
+// Comparativo consumo real x referência (manual/ficha técnica do modelo,
+// cadastrada em veiculos.consumo_referencia_kml) — função pura separada de
+// `calcularEstatisticasVeiculo` porque combina dois números de origens
+// diferentes (média medida x valor cadastrado), não é mais uma agregação do
+// histórico de abastecimentos por si só.
+export type StatusComparativoConsumo =
+  | "sem_referencia" // veículo ainda não tem consumo_referencia_kml cadastrado
+  | "sem_dado_real" // tem referência, mas não há consumo médio real ainda no período
+  | "pior_que_referencia" // consumo real pior que a referência além do limiar
+  | "dentro_do_esperado"
+  | "melhor_que_referencia"; // consumo real melhor que a referência além do limiar
+
+export interface ComparativoConsumo {
+  referenciaKml: number | null;
+  realKml: number | null;
+  // Negativo = consumo real PIOR que a referência (mais combustível por km).
+  // Positivo = consumo real MELHOR que a referência. Null quando falta um dos dois lados.
+  desvioPercentual: number | null;
+  status: StatusComparativoConsumo;
+}
+
+// Limiar de desvio pra sair de "dentro do esperado" — ajustável, não vem de
+// teste estatístico real, é um ponto de partida razoável (mesmo espírito de
+// TOLERANCIA_DESVIO_CONSUMO em lib/validacao/regras.ts, mas são números
+// independentes: aquele compara o veículo com o próprio histórico recente,
+// este compara com um valor absoluto de fábrica).
+export const LIMIAR_DESVIO_REFERENCIA_PERCENTUAL = 15;
+
+export function compararConsumoComReferencia(
+  consumoRealKml: number | null,
+  consumoReferenciaKml: number | null
+): ComparativoConsumo {
+  if (consumoReferenciaKml == null || consumoReferenciaKml <= 0) {
+    return { referenciaKml: consumoReferenciaKml, realKml: consumoRealKml, desvioPercentual: null, status: "sem_referencia" };
+  }
+
+  if (consumoRealKml == null) {
+    return { referenciaKml: consumoReferenciaKml, realKml: null, desvioPercentual: null, status: "sem_dado_real" };
+  }
+
+  const desvioPercentual = ((consumoRealKml - consumoReferenciaKml) / consumoReferenciaKml) * 100;
+
+  const status: StatusComparativoConsumo =
+    desvioPercentual <= -LIMIAR_DESVIO_REFERENCIA_PERCENTUAL
+      ? "pior_que_referencia"
+      : desvioPercentual >= LIMIAR_DESVIO_REFERENCIA_PERCENTUAL
+        ? "melhor_que_referencia"
+        : "dentro_do_esperado";
+
+  return {
+    referenciaKml: consumoReferenciaKml,
+    realKml: consumoRealKml,
+    desvioPercentual: Number(desvioPercentual.toFixed(1)),
+    status,
+  };
+}

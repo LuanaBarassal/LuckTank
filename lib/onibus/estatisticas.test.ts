@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calcularEstatisticasVeiculo, type AbastecimentoParaEstatistica } from "./estatisticas";
+import {
+  calcularEstatisticasVeiculo,
+  compararConsumoComReferencia,
+  type AbastecimentoParaEstatistica,
+} from "./estatisticas";
 
 describe("calcularEstatisticasVeiculo", () => {
   it("retorna tudo nulo/zero quando não há abastecimento nenhum", () => {
@@ -87,5 +91,57 @@ describe("calcularEstatisticasVeiculo", () => {
     expect(stats.totalLitros).toBe(60);
     expect(stats.totalValorGasto).toBe(400);
     expect(stats.totalKmRodado).toBe(0);
+  });
+});
+
+describe("compararConsumoComReferencia", () => {
+  it("status sem_referencia quando o veículo não tem consumo_referencia_kml cadastrado", () => {
+    expect(compararConsumoComReferencia(7.5, null)).toEqual({
+      referenciaKml: null,
+      realKml: 7.5,
+      desvioPercentual: null,
+      status: "sem_referencia",
+    });
+  });
+
+  it("status sem_dado_real quando há referência mas nenhum consumo médio real ainda", () => {
+    expect(compararConsumoComReferencia(null, 8)).toEqual({
+      referenciaKml: 8,
+      realKml: null,
+      desvioPercentual: null,
+      status: "sem_dado_real",
+    });
+  });
+
+  it("dentro_do_esperado quando o desvio é menor que o limiar (15%)", () => {
+    // real 7.6 vs referência 8 → desvio de -5%, dentro da faixa
+    const resultado = compararConsumoComReferencia(7.6, 8);
+    expect(resultado.status).toBe("dentro_do_esperado");
+    expect(resultado.desvioPercentual).toBeCloseTo(-5, 5);
+  });
+
+  it("pior_que_referencia quando o real consome mais que o limiar permite", () => {
+    // real 6 vs referência 8 → desvio de -25%, pior que o limiar de -15%
+    const resultado = compararConsumoComReferencia(6, 8);
+    expect(resultado.status).toBe("pior_que_referencia");
+    expect(resultado.desvioPercentual).toBeCloseTo(-25, 5);
+  });
+
+  it("melhor_que_referencia quando o real rende mais que o limiar", () => {
+    // real 10 vs referência 8 → desvio de +25%
+    const resultado = compararConsumoComReferencia(10, 8);
+    expect(resultado.status).toBe("melhor_que_referencia");
+    expect(resultado.desvioPercentual).toBeCloseTo(25, 5);
+  });
+
+  it("limiar exato (-15%) ainda conta como pior_que_referencia (limiar é <=, não <)", () => {
+    // real 6.8 vs referência 8 → desvio exato de -15%
+    const resultado = compararConsumoComReferencia(6.8, 8);
+    expect(resultado.desvioPercentual).toBeCloseTo(-15, 5);
+    expect(resultado.status).toBe("pior_que_referencia");
+  });
+
+  it("trata consumo_referencia_kml <= 0 como sem_referencia (dado cadastrado errado)", () => {
+    expect(compararConsumoComReferencia(7, 0).status).toBe("sem_referencia");
   });
 });

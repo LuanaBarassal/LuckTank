@@ -18,6 +18,7 @@ interface VeiculoExistente {
   capacidade_tanque_litros: number | null;
   tipo_combustivel: string | null;
   foto_url: string | null;
+  consumo_referencia_kml: number | null;
 }
 
 interface VeiculoFormProps {
@@ -34,6 +35,9 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
   const [ano, setAno] = useState(veiculo?.ano?.toString() ?? "");
   const [capacidade, setCapacidade] = useState(
     veiculo?.capacidade_tanque_litros?.toString() ?? ""
+  );
+  const [consumoReferencia, setConsumoReferencia] = useState(
+    veiculo?.consumo_referencia_kml?.toString() ?? ""
   );
   const [tipoCombustivel, setTipoCombustivel] = useState(veiculo?.tipo_combustivel ?? "");
   const [fotoFile, setFotoFile] = useState<File | null>(null);
@@ -76,6 +80,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
       marca,
       ano: ano ? Number(ano) : null,
       capacidade_tanque_litros: capacidade ? Number(capacidade) : null,
+      consumo_referencia_kml: consumoReferencia ? Number(consumoReferencia) : null,
       tipo_combustivel: tipoCombustivel || null,
       foto_url: fotoUrl,
     };
@@ -119,6 +124,21 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
         value={capacidade}
         onChange={(e) => setCapacidade(e.target.value)}
       />
+
+      <div className="flex flex-col gap-1">
+        <Input
+          label="Consumo de referência (km/L)"
+          type="number"
+          step="0.1"
+          placeholder="ex.: 3.5"
+          value={consumoReferencia}
+          onChange={(e) => setConsumoReferencia(e.target.value)}
+        />
+        <p className="text-xs text-slate-500">
+          Valor do manual/ficha técnica do modelo — usado só para comparar com o
+          consumo real medido pelos abastecimentos, na aba do veículo.
+        </p>
+      </div>
 
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-slate-300" htmlFor="tipo_combustivel">

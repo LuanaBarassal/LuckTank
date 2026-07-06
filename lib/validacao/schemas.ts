@@ -47,6 +47,11 @@ export const veiculoSchema = z.object({
   capacidade_tanque_litros: z.coerce.number().positive().max(2000).optional().nullable(),
   tipo_combustivel: z.enum(TIPOS_COMBUSTIVEL).optional().nullable(),
   foto_url: z.string().url().optional().nullable(),
+  // Consumo esperado (manual/ficha técnica do fabricante), em km/L — usado
+  // só como referência no comparativo da aba do veículo (lib/onibus/estatisticas.ts),
+  // nunca no motor de fraude. Teto de 50 km/L cobre qualquer veículo
+  // (não só ônibus a diesel), sem abrir espaço pra valor absurdo digitado errado.
+  consumo_referencia_kml: z.coerce.number().positive().max(50).optional().nullable(),
 });
 
 // Mesmos campos editáveis do cadastro — qr_token propositalmente NUNCA aparece aqui,

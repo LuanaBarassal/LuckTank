@@ -406,6 +406,7 @@ export type Database = {
           ano: number | null
           ativo: boolean
           capacidade_tanque_litros: number | null
+          consumo_referencia_kml: number | null
           criado_em: string
           empresa_id: string
           foto_url: string | null
@@ -426,6 +427,7 @@ export type Database = {
           ano?: number | null
           ativo?: boolean
           capacidade_tanque_litros?: number | null
+          consumo_referencia_kml?: number | null
           criado_em?: string
           empresa_id: string
           foto_url?: string | null
@@ -446,6 +448,7 @@ export type Database = {
           ano?: number | null
           ativo?: boolean
           capacidade_tanque_litros?: number | null
+          consumo_referencia_kml?: number | null
           criado_em?: string
           empresa_id?: string
           foto_url?: string | null
