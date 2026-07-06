@@ -12,12 +12,25 @@ const NAV = [
   { href: "/configuracoes", label: "Configurações" },
 ];
 
-export default function SidebarNav({ alertasPendentes }: { alertasPendentes: number }) {
+export default function SidebarNav({
+  alertasPendentes,
+  ehDonoSistema,
+}: {
+  alertasPendentes: number;
+  // Item de menu extra, só pro dono do sistema (lib/auth/dono-sistema.ts) —
+  // resolvido no servidor (layout.tsx), nunca calculado aqui: esconder o
+  // link é só cosmético, a página em si (app/(escritorio)/admin-sistema)
+  // já se protege sozinha independente disto.
+  ehDonoSistema: boolean;
+}) {
   const pathname = usePathname();
+  const itens = ehDonoSistema
+    ? [...NAV, { href: "/admin-sistema", label: "Administração" }]
+    : NAV;
 
   return (
     <nav className="flex flex-col gap-1.5">
-      {NAV.map((item) => {
+      {itens.map((item) => {
         const ativo = pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link

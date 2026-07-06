@@ -69,6 +69,15 @@ export const motoristaSchema = z.object({
     .transform((v) => (v ? v : null)),
 });
 
+// Cria uma empresa (tenant) nova + convida o primeiro administrador dela —
+// só usado pelo painel de administração do sistema (app/(escritorio)/admin-sistema),
+// nunca pelo fluxo normal de uma empresa já existente.
+export const criarEmpresaSchema = z.object({
+  nomeEmpresa: z.string().trim().min(2, "Nome muito curto").max(120),
+  nomeAdministrador: z.string().trim().min(2, "Nome muito curto").max(120),
+  emailAdministrador: z.string().trim().email("E-mail inválido"),
+});
+
 export const PAPEIS = ["supervisor", "gerente", "administrador"] as const;
 
 export const convidarUsuarioSchema = z.object({

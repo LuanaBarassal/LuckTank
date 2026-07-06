@@ -1,0 +1,104 @@
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { ehDonoSistema } from "@/lib/auth/dono-sistema";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { Card, CardTitle } from "@/components/ui/card";
+import CriarEmpresaForm from "@/components/escritorio/criar-empresa-form";
+import { formatarDataBr } from "@/lib/formatacao";
+
+// Painel do dono do sistema — atravessa TODAS as empresas de propósito,
+// por isso usa a service role (RLS é escopado por empresa, não existe
+// policy nenhuma que deveria liberar leitura cross-tenant pra um client de
+// sessão comum). O gate de acesso usa o e-mail puro da sessão do Supabase
+// Auth (não getUsuarioAtual()) DE PROPÓSITO: o dono do sistema não precisa
+// ter uma linha em `usuarios`/pertencer a nenhuma empresa pra acessar isto
+// — se dependesse de getUsuarioAtual(), alguém sem empresa nenhuma (o caso
+// mais comum pro dono, que não é administrador de tenant nenhum) nunca
+// conseguiria entrar aqui. Mesmo princípio do resto do app (ex.:
+// onibus/novo/page.tsx bloqueia quem não é administrador): nunca confiar só
+// na ausência do link no menu.
+export default async function AdminSistemaPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  if (!ehDonoSistema(user.email)) {
+    return (
+      <div>
+        <h1 className="mb-2 font-title text-2xl font-bold text-white">Administração do sistema</h1>
+        <p className="text-sm font-medium text-critico-400">
+          Só o dono do sistema pode acessar esta página.
+        </p>
+      </div>
+    );
+  }
+
+  const admin = createAdminClient();
+
+  const { data: empresas } = await admin
+    .from("empresas")
+    .select("id, nome, criado_em")
+    .order("criado_em", { ascending: false });
+
+  const idsEmpresas = (empresas ?? []).map((e) => e.id);
+
+  const [{ data: usuariosBrutos }, { data: veiculosBrutos }] = await Promise.all([
+    idsEmpresas.length
+      ? admin.from("usuarios").select("empresa_id").in("empresa_id", idsEmpresas)
+      : Promise.resolve({ data: [] as { empresa_id: string }[] }),
+    idsEmpresas.length
+      ? admin.from("veiculos").select("empresa_id").in("empresa_id", idsEmpresas)
+      : Promise.resolve({ data: [] as { empresa_id: string }[] }),
+  ]);
+
+  const contarPorEmpresa = (linhas: { empresa_id: string }[]) => {
+    const mapa = new Map<string, number>();
+    for (const l of linhas) mapa.set(l.empresa_id, (mapa.get(l.empresa_id) ?? 0) + 1);
+    return mapa;
+  };
+
+  const mapaUsuarios = contarPorEmpresa(usuariosBrutos ?? []);
+  const mapaVeiculos = contarPorEmpresa(veiculosBrutos ?? []);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="font-title text-2xl font-bold text-white">Administração do sistema</h1>
+        <p className="text-sm text-slate-400">
+          Cria empresas (tenants) novas e mostra todas as que já existem — visível só pro dono do
+          sistema, independente da empresa em que cada um está logado.
+        </p>
+      </div>
+
+      <Card variant="dark" className="max-w-2xl">
+        <CardTitle variant="dark">Empresas cadastradas ({empresas?.length ?? 0})</CardTitle>
+        <div className="flex flex-col gap-2 text-sm">
+          {!empresas?.length && <p className="text-slate-400">Nenhuma empresa cadastrada ainda.</p>}
+          {empresas?.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center justify-between border-b border-navy-800 py-2 last:border-0"
+            >
+              <div>
+                <div className="font-medium text-white">{e.nome}</div>
+                <div className="text-xs text-slate-500">
+                  Criada em {formatarDataBr(e.criado_em.slice(0, 10))}
+                </div>
+              </div>
+              <div className="text-xs text-slate-400">
+                {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card variant="dark" className="max-w-md">
+        <CardTitle variant="dark">Criar empresa nova</CardTitle>
+        <CriarEmpresaForm />
+      </Card>
+    </div>
+  );
+}

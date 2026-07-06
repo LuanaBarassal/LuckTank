@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { ehDonoSistema } from "@/lib/auth/dono-sistema";
 import LogoutButton from "@/components/escritorio/logout-button";
 import SidebarNav from "@/components/escritorio/sidebar-nav";
 
@@ -35,7 +36,7 @@ export default async function EscritorioLayout({
           </div>
         </div>
 
-        <SidebarNav alertasPendentes={alertasPendentes ?? 0} />
+        <SidebarNav alertasPendentes={alertasPendentes ?? 0} ehDonoSistema={ehDonoSistema(user.email)} />
 
         <div className="mt-auto border-t border-navy-800 pt-5">
           <LogoutButton />
