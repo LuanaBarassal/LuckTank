@@ -12,7 +12,10 @@
 // components/motorista/fluxo-abastecimento.tsx (mapearFormaPagamento) —
 // precisa do "target": "ES2018" no tsconfig pra flag `u` de regex funcionar
 // com \p{Diacritic} (ver "Lições aprendidas" no PROJETO.md, Fase 4).
-function normalizarSlug(texto: string): string {
+// Exportada porque também é usada pra montar nome de arquivo DENTRO do zip
+// de fotos (lib/export/nome-foto-zip.ts) — mesma regra de limpeza, um só
+// lugar de verdade.
+export function normalizarSlug(texto: string): string {
   return texto
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
@@ -32,7 +35,7 @@ function ehMesCorridoInteiro(de: string, ate: string): boolean {
 export function gerarNomeArquivoExport(
   segmentos: string[],
   periodo: { de: string; ate: string },
-  extensao: "xlsx" | "pdf"
+  extensao: "xlsx" | "pdf" | "zip"
 ): string {
   const partes = segmentos.map(normalizarSlug).filter(Boolean);
   const identidade = partes.length ? partes.join("_") : "Empresa";

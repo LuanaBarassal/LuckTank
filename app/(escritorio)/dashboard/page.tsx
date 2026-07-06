@@ -115,6 +115,12 @@ export default async function DashboardPage({
             >
               Exportar PDF
             </a>
+            <a
+              href={`/api/export/fotos?${queryExport}`}
+              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
+            >
+              Baixar fotos (ZIP)
+            </a>
           </div>
         </div>
 
