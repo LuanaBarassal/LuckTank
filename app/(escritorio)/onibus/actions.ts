@@ -163,9 +163,26 @@ export async function excluirAbastecimento(id: string, pin: string): Promise<Res
     await admin.from("veiculos").update({ km_atual: maisRecente.km_atual }).eq("id", antes.veiculo_id);
   }
 
+  // Alertas gerados pra este abastecimento (ver lib/validacao/regras.ts) não
+  // fazem sentido mais uma vez que o registro que os disparou não existe
+  // mais como ativo — sem isso, ficavam pendentes pra sempre em /alertas,
+  // sem nenhuma indicação de que o abastecimento por trás foi excluído
+  // (achado testando esta função: um abastecimento de teste excluído
+  // deixou 2 alertas de "atenção" órfãos no painel). `resolvido_por`/`em`
+  // ficam como o próprio usuário que excluiu — resolver aqui não é edição
+  // de dado de negócio (mesmo raciocínio de `resolverAlerta` em
+  // alertas/actions.ts), então não passa por edicoes_log.
+  await admin
+    .from("alertas")
+    .update({ resolvido: true, resolvido_por: usuario.id, resolvido_em: new Date().toISOString() })
+    .eq("entidade_tipo", "abastecimento")
+    .eq("entidade_id", id)
+    .eq("resolvido", false);
+
   revalidatePath(`/onibus/${antes.veiculo_id}`);
   revalidatePath("/dashboard");
   revalidatePath("/agenda");
+  revalidatePath("/alertas");
   return { data: { id } };
 }
 

@@ -1605,13 +1605,59 @@ abastecimento, também só com PIN.
   ativo mais recente que sobrar (fica como estava se não sobrar nenhum, por
   não haver um valor "original" registrado em lugar nenhum pra restaurar).
 
-**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+**Verificado inicialmente**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
 `npm run build` limpos; migration aplicada e coluna confirmada no projeto
 real; histórico de migrations sincronizado (`supabase migration list`).
-**Não verificado**: nenhum teste real no navegador (criar um PIN de
-verdade, exportar um arquivo, excluir um abastecimento de teste e conferir
-`edicoes_log` + `km_atual` recalculado) — só passou pelos checks estáticos
-e pela confirmação de schema no banco.
+
+### Teste real no navegador (2026-07-07, mesmo dia)
+
+Rodado contra `npm run dev` local, apontando pro MESMO projeto Supabase
+real (não um banco de teste separado) — logado como o administrador de
+verdade da Expresso Mundial.
+
+- ✅ **Login, dashboard, aba do ônibus, Agenda, Alertas** — todos renderizam
+  com dados reais, sem erro nenhum no log do servidor (nenhum 500 em toda a
+  sessão).
+- ✅ **Criar PIN** em Configurações — mensagem muda corretamente de "você
+  ainda não configurou" pra "você já tem um PIN configurado".
+- ✅ **Export Excel/PDF/ZIP com PIN**: bloqueado sem PIN (mensagem "PIN
+  incorreto" — ver nit abaixo), desbloqueado com o PIN certo, arquivo
+  confirmado válido nos 3 formatos (`file`/`unzip` na máquina real, não só
+  "download não deu erro"). PIN reaproveitado em cliques seguintes na mesma
+  sessão de navegador, sem re-pedir. **Nota sobre o ZIP**: nas duas
+  primeiras tentativas o arquivo pareceu não ter baixado (nem no log nem no
+  disco, checado cedo demais) — era só demora real de baixar várias fotos
+  do Storage; os 3 ZIPs apareceram alguns segundos depois, todos válidos e
+  com o número certo de arquivos. Não é bug, é o tempo de espera não ter
+  sido dado antes de checar.
+- ✅ **Exclusão de abastecimento**: criado um abastecimento de teste real
+  via `/api/abastecimentos` (mesmo endpoint do motorista — o upload de foto
+  real pela UI automatizada não foi possível neste ambiente, mas a foto é
+  opcional na API), disparou alerta de consumo corretamente (motor de
+  fraude confirmado funcionando em produção), excluído pela tela com PIN —
+  confirmado no banco: `status = 'excluido'`, `excluido_por`/`excluido_em`
+  gravados, `edicoes_log` com `acao: delete`, e `veiculos.km_atual`
+  recalculado de volta pro valor correto (160000, não ficou preso em
+  160100). Dado de teste removido do banco depois (linha e alertas).
+- 🔴 **Bug real encontrado e corrigido**: excluir um abastecimento não
+  resolvia os alertas gerados por ele — ficavam pendentes pra sempre em
+  `/alertas`, sem indicação nenhuma de que o registro que os originou já
+  tinha sido excluído (confirmado: os 2 alertas do abastecimento de teste
+  continuaram `resolvido: false` depois da exclusão). Corrigido em
+  `excluirAbastecimento` (`onibus/actions.ts`): agora resolve automaticamente
+  qualquer alerta pendente da entidade excluída (mesmo raciocínio de
+  `resolverAlerta` — não é edição de dado de negócio, não passa por
+  `edicoes_log`). Os 2 alertas órfãos já existentes foram limpos
+  manualmente no banco antes do dado de teste ser removido.
+- **Nit não corrigido**: a mensagem do modal de PIN é sempre "PIN
+  incorreto", mesmo quando a causa real é "você nunca configurou um PIN"
+  (testado sem PIN configurado ainda). Funcionalmente correto (bloqueia do
+  mesmo jeito), só a mensagem podia ser mais precisa nesse caso específico
+  — não corrigido agora por ser cosmético, fica registrado caso valha a
+  pena ajustar depois.
+
+`npm test` (101/101), `tsc`, `eslint`, `npm run build` limpos de novo depois
+do fix dos alertas órfãos.
 
 ## Regras invariantes (não podem quebrar)
 
