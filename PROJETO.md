@@ -1503,6 +1503,41 @@ persistir depois disso, o próximo passo seria migrar pro SDK novo
 foi feito agora por ser uma troca de dependência maior, fora do escopo deste
 pedido.
 
+## Valor por litro editável (2026-07-07, feedback do usuário em produção)
+
+O usuário testou o item anterior ("valor por litro" calculado ao vivo,
+somente leitura) e reportou que não conseguia CORRIGIR o valor quando
+estava errado — sendo só a divisão de litros/valor_total, editá-lo exigia
+adivinhar qual dos dois campos mexer, em vez de corrigir o valor que
+realmente estava errado no cupom.
+
+- ✅ **Campo próprio, editável, igual aos outros.** Nova coluna
+  `abastecimentos.valor_litro` (`0013_abastecimentos_valor_litro.sql` —
+  numeric(8,3), nullable, sem regra de consistência com litros×valor_total,
+  mesmo corte de escopo da 0001_init.sql). `abastecimentoSchema` validou
+  como opcional/positivo. `PassoFormulario` trocou o parágrafo somente-leitura
+  por um `Input` de verdade (`valorLitro` em `ValoresFormulario`). No wizard:
+  pré-preenchido com o `valor_litro` que a IA extraiu quando disponível;
+  se a IA não leu esse campo específico (só litros/valor_total), calcula um
+  palpite inicial — mas o motorista pode editar livremente dali, exatamente
+  como qualquer outro campo pré-preenchido pela IA. Enviado em
+  `/api/abastecimentos` e persistido. Agenda (`/agenda`) atualizada pra
+  mostrar o valor real gravado, caindo pro cálculo só em registros antigos
+  (de antes desta coluna existir) que não têm o dado.
+- Migration **aplicada no projeto Supabase real** via `supabase db push
+  --linked` (não manual desta vez) — já entra registrada certinha no
+  histórico de migrations, sem precisar de `migration repair` depois.
+  Confirmado via `supabase db query --linked` contra
+  `information_schema.columns`. `types/database.ts` regenerado
+  (`supabase gen types typescript --linked`) e reconciliado à mão com a
+  seção de aliases de conveniência mantida no fim do arquivo (não gerada,
+  preservada por cima — ver comentário no próprio arquivo).
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. **Não verificado**: nenhum teste real no wizard
+(foto real, corrigir o valor por litro manualmente e conferir o que fica
+gravado) — só passou pelos checks estáticos.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

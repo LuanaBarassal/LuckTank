@@ -71,6 +71,7 @@ const VALORES_INICIAIS: ValoresFormulario = {
   postoCnpj: "",
   litros: "",
   valorTotal: "",
+  valorLitro: "",
   formaPagamento: "",
   numeroNota: "",
   bandeiraPosto: "",
@@ -203,6 +204,17 @@ export default function FluxoAbastecimento({
           postoCnpj: resultado.dados.posto_cnpj ?? "",
           litros: resultado.dados.litros != null ? String(resultado.dados.litros) : "",
           valorTotal: resultado.dados.valor_total != null ? String(resultado.dados.valor_total) : "",
+          // Se a IA não leu o valor por litro em si, mas leu litros e valor
+          // total, calcula um palpite inicial — o motorista ainda pode
+          // corrigir livremente (é só o valor de partida do campo).
+          valorLitro:
+            resultado.dados.valor_litro != null
+              ? String(resultado.dados.valor_litro)
+              : resultado.dados.litros != null &&
+                  resultado.dados.valor_total != null &&
+                  resultado.dados.litros > 0
+                ? (resultado.dados.valor_total / resultado.dados.litros).toFixed(3)
+                : "",
           formaPagamento: mapearFormaPagamento(resultado.dados.forma_pagamento),
           numeroNota: resultado.dados.numero_nota ?? "",
           bandeiraPosto: resultado.dados.bandeira_posto ?? "",
@@ -262,6 +274,7 @@ export default function FluxoAbastecimento({
     if (valores.postoCnpj) campos.posto_cnpj = valores.postoCnpj;
     campos.litros = valores.litros;
     campos.valor_total = valores.valorTotal;
+    if (valores.valorLitro) campos.valor_litro = valores.valorLitro;
     if (valores.formaPagamento) campos.forma_pagamento = valores.formaPagamento;
     if (valores.numeroNota) campos.numero_nota = valores.numeroNota;
     if (valores.bandeiraPosto) campos.bandeira_posto = valores.bandeiraPosto;

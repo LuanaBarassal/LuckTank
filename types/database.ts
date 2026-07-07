@@ -47,6 +47,7 @@ export type Database = {
           registro_uuid: string
           sincronizado_em: string | null
           status: string
+          valor_litro: number | null
           valor_total: number
           veiculo_id: string
         }
@@ -82,6 +83,7 @@ export type Database = {
           registro_uuid: string
           sincronizado_em?: string | null
           status?: string
+          valor_litro?: number | null
           valor_total: number
           veiculo_id: string
         }
@@ -117,6 +119,7 @@ export type Database = {
           registro_uuid?: string
           sincronizado_em?: string | null
           status?: string
+          valor_litro?: number | null
           valor_total?: number
           veiculo_id?: string
         }

@@ -62,7 +62,7 @@ export default async function AgendaPage({
   let query = supabase
     .from("abastecimentos")
     .select(
-      "id, data_abastecimento, hora, litros, valor_total, km_atual, km_rodado, consumo_kml, posto_nome, posto_cidade, posto_uf, forma_pagamento, numero_nota, bandeira_posto, veiculo_id, motorista_id, motorista_nome_livre"
+      "id, data_abastecimento, hora, litros, valor_total, valor_litro, km_atual, km_rodado, consumo_kml, posto_nome, posto_cidade, posto_uf, forma_pagamento, numero_nota, bandeira_posto, veiculo_id, motorista_id, motorista_nome_livre"
     )
     .eq("status", "ativo")
     .gte("data_abastecimento", de)
@@ -78,6 +78,7 @@ export default async function AgendaPage({
     hora: a.hora,
     litros: a.litros,
     valor_total: a.valor_total,
+    valor_litro: a.valor_litro,
     km_atual: a.km_atual,
     km_rodado: a.km_rodado,
     consumo_kml: a.consumo_kml,
@@ -201,7 +202,11 @@ export default async function AgendaPage({
 
         <div className="flex flex-col gap-3">
           {itensDoDiaSelecionado.map((item) => {
-            const valorPorLitro = item.litros > 0 ? item.valor_total / item.litros : null;
+            // Prioriza o valor confirmado pelo motorista (coluna própria
+            // desde a 0013); calcula só como fallback pra registros antigos
+            // que não têm esse dado.
+            const valorPorLitro =
+              item.valor_litro ?? (item.litros > 0 ? item.valor_total / item.litros : null);
             return (
               <div key={item.id} className="rounded-xl border border-navy-800 bg-navy-950 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">

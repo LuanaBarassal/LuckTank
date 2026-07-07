@@ -15,6 +15,7 @@ function item(parcial: Partial<AbastecimentoAgenda> & { id: string; data_abastec
     hora: null,
     litros: 100,
     valor_total: 500,
+    valor_litro: null,
     km_atual: 1000,
     km_rodado: null,
     consumo_kml: null,

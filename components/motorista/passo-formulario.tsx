@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FORMAS_PAGAMENTO, ROTULO_FORMA_PAGAMENTO } from "@/lib/validacao/schemas";
-import { formatarMoeda } from "@/lib/formatacao";
 
 export interface ValoresFormulario {
   dataAbastecimento: string;
@@ -14,6 +13,7 @@ export interface ValoresFormulario {
   postoCnpj: string;
   litros: string;
   valorTotal: string;
+  valorLitro: string;
   formaPagamento: string;
   numeroNota: string;
   bandeiraPosto: string;
@@ -43,15 +43,6 @@ export default function PassoFormulario({
 }: Props) {
   const kmMenorQueAnterior =
     kmMinimo != null && valores.kmAtual !== "" && Number(valores.kmAtual) < kmMinimo;
-
-  // Derivado (não é um campo próprio, nunca gravado): sempre a divisão dos
-  // dois campos que já existem, então nunca diverge do que a IA leu nem do
-  // que o motorista está digitando agora — inclusive se ele corrigir litros
-  // ou valor total manualmente, o valor por litro acompanha em tempo real.
-  const litrosNumero = Number(valores.litros);
-  const valorTotalNumero = Number(valores.valorTotal);
-  const valorPorLitro =
-    litrosNumero > 0 && valorTotalNumero > 0 ? valorTotalNumero / litrosNumero : null;
 
   const podeEnviar =
     valores.dataAbastecimento.length > 0 &&
@@ -108,11 +99,15 @@ export default function PassoFormulario({
         />
       </div>
 
-      {valorPorLitro != null && (
-        <p className="-mt-2 text-xs text-neutral-500">
-          Valor por litro: {formatarMoeda(valorPorLitro)}/L
-        </p>
-      )}
+      <Input
+        label="Valor por litro (opcional)"
+        type="number"
+        inputMode="decimal"
+        step="0.001"
+        value={valores.valorLitro}
+        onChange={(e) => onChange("valorLitro", e.target.value)}
+        placeholder="Ex: 5,499"
+      />
 
       <div>
         <Input

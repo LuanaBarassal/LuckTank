@@ -125,6 +125,10 @@ export const abastecimentoSchema = z
       .transform((v) => (v ? v.toUpperCase() : null)),
     litros: z.coerce.number().positive("Litros deve ser maior que zero").max(2000),
     valor_total: z.coerce.number().positive("Valor deve ser maior que zero").max(100000),
+    // Confirmado/editado pelo motorista — sem regra de consistência com
+    // litros×valor_total (mesmo corte de escopo da 0001_init.sql). Opcional:
+    // fluxo sem OCR (offline/manual) pode seguir sem preencher.
+    valor_litro: z.coerce.number().positive("Valor por litro inválido").max(50).optional().nullable(),
     forma_pagamento: z.enum(FORMAS_PAGAMENTO).optional().nullable(),
     numero_nota: textoOpcional,
     bandeira_posto: textoOpcional,

@@ -11,6 +11,7 @@ export interface AbastecimentoAgenda {
   hora: string | null;
   litros: number;
   valor_total: number;
+  valor_litro: number | null;
   km_atual: number;
   km_rodado: number | null;
   consumo_kml: number | null;
