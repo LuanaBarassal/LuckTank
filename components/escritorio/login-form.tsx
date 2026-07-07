@@ -116,6 +116,16 @@ export default function LoginForm() {
               {carregando ? "Entrando..." : "Entrar"}
             </Button>
           </form>
+
+          <p className="mt-6 text-center text-xs text-neutral-400">
+            <a href="/privacidade" className="underline underline-offset-2 hover:text-neutral-600">
+              Política de Privacidade
+            </a>
+            {" · "}
+            <a href="/termos" className="underline underline-offset-2 hover:text-neutral-600">
+              Termos de Uso
+            </a>
+          </p>
         </div>
       </div>
     </main>

@@ -13,6 +13,8 @@ const PUBLICAS = [
   "/login",
   "/definir-senha",
   "/r",
+  "/privacidade",
+  "/termos",
   "/api/ocr",
   "/api/gemini",
   "/api/abastecimentos",
