@@ -8,7 +8,7 @@ const PASSOS = [
   "Escaneie o QR Code — ele abre o sistema de abastecimento, sem senha.",
   'Toque no seu nome na lista (ou em "Meu nome não está na lista" e digite).',
   "Tire uma foto do comprovante/cupom do abastecimento, ou escolha uma da galeria.",
-  "Confira os dados preenchidos automaticamente (ou preencha à mão) e informe o KM atual do ônibus.",
+  "Confira os dados preenchidos automaticamente (ou preencha à mão) e informe o KM atual do veículo.",
   'Toque em "Confirmar abastecimento". Pronto — o registro já chega ao escritório.',
 ];
 

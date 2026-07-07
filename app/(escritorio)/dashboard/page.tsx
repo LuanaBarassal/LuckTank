@@ -146,7 +146,7 @@ export default async function DashboardPage({
         </Card>
 
         <Card variant="dark">
-          <CardTitle variant="dark">Consumo médio por ônibus (km/L)</CardTitle>
+          <CardTitle variant="dark">Consumo médio por veículo (km/L)</CardTitle>
           {consumoPorVeiculo.length ? (
             <GraficoBarra dados={consumoPorVeiculo} chaveX="nome" chaveY="consumoMedio" corBarra="#fbbf24" />
           ) : (

@@ -19,12 +19,12 @@ export default async function OnibusPage() {
 
   return (
     <div>
-      <h1 className="mb-6 font-title text-2xl font-bold text-white">Ônibus</h1>
+      <h1 className="mb-6 font-title text-2xl font-bold text-white">Veículos</h1>
 
       {!veiculos?.length && (
         <Card variant="dark">
           <div className="flex flex-col items-center gap-1 py-6 text-center">
-            <span className="text-2xl">🚌</span>
+            <span className="text-2xl">🚚</span>
             <p className="text-sm text-slate-400">Nenhum veículo cadastrado ainda.</p>
           </div>
         </Card>

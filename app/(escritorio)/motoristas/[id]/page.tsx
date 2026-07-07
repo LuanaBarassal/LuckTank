@@ -118,7 +118,7 @@ export default async function MotoristaDetalhePage({ params }: { params: { id: s
               <thead>
                 <tr className="border-b border-navy-800 text-slate-400">
                   <th className="py-2 pr-4 font-medium">Data</th>
-                  <th className="py-2 pr-4 font-medium">Ônibus</th>
+                  <th className="py-2 pr-4 font-medium">Veículo</th>
                   <th className="py-2 pr-4 font-medium">Litros</th>
                   <th className="py-2 pr-4 font-medium">Valor</th>
                 </tr>

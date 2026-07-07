@@ -1719,6 +1719,29 @@ abertos num navegador de verdade — não há credencial de dono do sistema
 disponível nesta sessão pra testar. Passaram por `tsc`/`eslint`/`build`,
 não por uso real ainda.
 
+## "Ônibus" → "Veículos" no texto da interface (2026-07-07)
+
+Pedido comercial (análise de venda): a marca inteira falava "Ônibus" no
+menu/telas mesmo o banco já sendo genérico (qualquer tipo de combustível,
+sem coluna nenhuma específica de ônibus). Isso fechava a porta pra vender
+pra transportadora de carga/utilitário sem nem abrir a conversa.
+
+- ✅ Texto trocado onde aparecia pro usuário: menu lateral ("Ônibus" →
+  "Veículos"), título da aba, gráfico do dashboard ("Consumo médio por
+  veículo"), coluna da ficha do motorista, texto de ajuda do formulário de
+  veículo, instrução impressa na etiqueta do motorista ("KM atual do
+  veículo"). Emoji do estado vazio trocado de 🚌 pra 🚚.
+- ✅ **Rotas (`/onibus/...`) e o módulo `lib/onibus/` NÃO foram renomeados**
+  — decisão deliberada: motorista nunca vê essa URL (usa `/r/<qr_token>`),
+  escritório nunca digita a URL na mão (só clica no menu), então renomear
+  rota/pasta seria um refactor bem maior (toda `revalidatePath`, todo
+  import, rename de pasta) sem ganho nenhum a mais pro cliente — o que
+  importa pra venda é o texto visível, não a URL interna.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. Testado no navegador local: menu e título da tela
+confirmados mostrando "Veículos".
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

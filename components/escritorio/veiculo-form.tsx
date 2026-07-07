@@ -113,8 +113,8 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
         <Input label="Placa" value={placa} onChange={(e) => setPlaca(e.target.value)} required />
       </div>
       <p className="-mt-2 text-xs text-slate-500">
-        Prefixo é o identificador usado na operação (motorista e escritório se referem ao ônibus por
-        ele) — opcional, mas recomendado.
+        Prefixo é o identificador usado na operação (motorista e escritório se referem ao veículo
+        por ele) — opcional, mas recomendado.
       </p>
       <Input label="Modelo" value={modelo ?? ""} onChange={(e) => setModelo(e.target.value)} />
       <Input label="Marca" value={marca ?? ""} onChange={(e) => setMarca(e.target.value)} />
