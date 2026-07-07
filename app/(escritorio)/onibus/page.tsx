@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/schemas";
 import { formatarVeiculo } from "@/lib/formatacao";
 
+// Cadastro de veículo novo saiu daqui de propósito: só o LuckTank adiciona
+// veículo a uma empresa agora (ver app/(escritorio)/admin-sistema — mesmo
+// motivo de "Convidar usuário" ter saído desta empresa também). Edição de
+// veículo já cadastrado continua liberada pra gerente/administrador, sem
+// mudança nenhuma (ver onibus/[id]/page.tsx).
 export default async function OnibusPage() {
   const supabase = await createClient();
-  const usuario = await getUsuarioAtual();
 
   const { data: veiculos } = await supabase
     .from("veiculos")
@@ -17,14 +19,7 @@ export default async function OnibusPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="font-title text-2xl font-bold text-white">Ônibus</h1>
-        {usuario?.papel === "administrador" && (
-          <Link href="/onibus/novo">
-            <Button>Novo veículo</Button>
-          </Link>
-        )}
-      </div>
+      <h1 className="mb-6 font-title text-2xl font-bold text-white">Ônibus</h1>
 
       {!veiculos?.length && (
         <Card variant="dark">

@@ -4,6 +4,8 @@ import { ehDonoSistema } from "@/lib/auth/dono-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { Card, CardTitle } from "@/components/ui/card";
 import CriarEmpresaForm from "@/components/escritorio/criar-empresa-form";
+import ConvidarUsuarioEmpresaForm from "@/components/escritorio/convidar-usuario-empresa-form";
+import CriarVeiculoEmpresaForm from "@/components/escritorio/criar-veiculo-empresa-form";
 import { formatarDataBr } from "@/lib/formatacao";
 
 // Painel do dono do sistema — atravessa TODAS as empresas de propósito,
@@ -98,6 +100,27 @@ export default async function AdminSistemaPage() {
       <Card variant="dark" className="max-w-md">
         <CardTitle variant="dark">Criar empresa nova</CardTitle>
         <CriarEmpresaForm />
+      </Card>
+
+      <Card variant="dark" className="max-w-md">
+        <CardTitle variant="dark">Convidar usuário pra uma empresa</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Adiciona um segundo (ou terceiro) usuário a uma empresa que já existe — cadastro de
+          usuário saiu de dentro da própria empresa, só o LuckTank adiciona agora.
+        </p>
+        <ConvidarUsuarioEmpresaForm
+          empresas={(empresas ?? []).map((e) => ({ id: e.id, nome: e.nome }))}
+        />
+      </Card>
+
+      <Card variant="dark" className="max-w-lg">
+        <CardTitle variant="dark">Cadastrar veículo pra uma empresa</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Cadastro de veículo também saiu de dentro da própria empresa, pelo mesmo motivo.
+        </p>
+        <CriarVeiculoEmpresaForm
+          empresas={(empresas ?? []).map((e) => ({ id: e.id, nome: e.nome }))}
+        />
       </Card>
     </div>
   );

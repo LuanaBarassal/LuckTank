@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { criarVeiculo, atualizarVeiculo } from "@/app/(escritorio)/onibus/actions";
+import { atualizarVeiculo } from "@/app/(escritorio)/onibus/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TIPOS_COMBUSTIVEL, ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/schemas";
@@ -23,25 +23,28 @@ interface VeiculoExistente {
 
 interface VeiculoFormProps {
   empresaId: string;
-  veiculo?: VeiculoExistente;
+  veiculo: VeiculoExistente;
 }
 
+// Só edição — cadastro de veículo novo saiu daqui (ver
+// components/escritorio/criar-veiculo-empresa-form.tsx, usado só pelo dono
+// do sistema em admin-sistema).
 export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
   const router = useRouter();
-  const [prefixo, setPrefixo] = useState(veiculo?.prefixo ?? "");
-  const [placa, setPlaca] = useState(veiculo?.placa ?? "");
-  const [modelo, setModelo] = useState(veiculo?.modelo ?? "");
-  const [marca, setMarca] = useState(veiculo?.marca ?? "");
-  const [ano, setAno] = useState(veiculo?.ano?.toString() ?? "");
+  const [prefixo, setPrefixo] = useState(veiculo.prefixo ?? "");
+  const [placa, setPlaca] = useState(veiculo.placa);
+  const [modelo, setModelo] = useState(veiculo.modelo ?? "");
+  const [marca, setMarca] = useState(veiculo.marca ?? "");
+  const [ano, setAno] = useState(veiculo.ano?.toString() ?? "");
   const [capacidade, setCapacidade] = useState(
-    veiculo?.capacidade_tanque_litros?.toString() ?? ""
+    veiculo.capacidade_tanque_litros?.toString() ?? ""
   );
   const [consumoReferencia, setConsumoReferencia] = useState(
-    veiculo?.consumo_referencia_kml?.toString() ?? ""
+    veiculo.consumo_referencia_kml?.toString() ?? ""
   );
-  const [tipoCombustivel, setTipoCombustivel] = useState(veiculo?.tipo_combustivel ?? "");
+  const [tipoCombustivel, setTipoCombustivel] = useState(veiculo.tipo_combustivel ?? "");
   const [fotoFile, setFotoFile] = useState<File | null>(null);
-  const [fotoUrlAtual] = useState(veiculo?.foto_url ?? null);
+  const [fotoUrlAtual] = useState(veiculo.foto_url ?? null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -58,7 +61,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
 
     if (fotoFile) {
       const supabase = createClient();
-      const caminho = `${empresaId}/${veiculo?.id ?? crypto.randomUUID()}/${Date.now()}-${fotoFile.name}`;
+      const caminho = `${empresaId}/${veiculo.id}/${Date.now()}-${fotoFile.name}`;
       const { error: uploadError } = await supabase.storage
         .from("fotos-veiculos")
         .upload(caminho, fotoFile, { upsert: true });
@@ -85,9 +88,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
       foto_url: fotoUrl,
     };
 
-    const resultado = veiculo
-      ? await atualizarVeiculo(veiculo.id, payload)
-      : await criarVeiculo(payload);
+    const resultado = await atualizarVeiculo(veiculo.id, payload);
 
     setEnviando(false);
 
@@ -183,7 +184,7 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
       {erro && <p className="text-sm font-medium text-critico-400">{erro}</p>}
 
       <Button type="submit" disabled={enviando}>
-        {enviando ? "Salvando..." : veiculo ? "Salvar alterações" : "Cadastrar veículo"}
+        {enviando ? "Salvando..." : "Salvar alterações"}
       </Button>
     </form>
   );

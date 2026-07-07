@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Card, CardTitle } from "@/components/ui/card";
-import ConvidarUsuarioForm from "@/components/escritorio/convidar-usuario-form";
 import PinForm from "@/components/escritorio/pin-form";
 import { temPinDefinido } from "./actions";
 
@@ -49,16 +48,10 @@ export default async function ConfiguracoesPage() {
         </div>
       </Card>
 
-      {usuario.papel === "administrador" ? (
-        <Card variant="dark" className="max-w-md">
-          <CardTitle variant="dark">Convidar usuário</CardTitle>
-          <ConvidarUsuarioForm />
-        </Card>
-      ) : (
-        <p className="text-sm text-slate-400">
-          Só administradores podem convidar novos usuários.
-        </p>
-      )}
+      <p className="text-sm text-slate-400">
+        Precisa de mais um usuário com acesso? Fale com o suporte do LuckTank — novos usuários são
+        adicionados pela nossa equipe.
+      </p>
     </div>
   );
 }

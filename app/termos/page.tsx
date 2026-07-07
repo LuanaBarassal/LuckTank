@@ -63,7 +63,7 @@ export default function TermosDeUsoPage() {
       </Secao>
 
       <Secao titulo="Contato">
-        <p>luwebdesigners@gmail.com</p>
+        <p>luckfrotas@gmail.com · WhatsApp (13) 99770-0901</p>
       </Secao>
 
       <p className="mt-4 border-t border-neutral-200 pt-4 text-sm text-neutral-500">

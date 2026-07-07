@@ -1659,6 +1659,66 @@ verdade da Expresso Mundial.
 `npm test` (101/101), `tsc`, `eslint`, `npm run build` limpos de novo depois
 do fix dos alertas órfãos.
 
+## Cadastro centralizado no LuckTank (2026-07-07, mudança de modelo de negócio)
+
+Contexto: modelo de venda é direto e manual (contrato pessoal, R$1000/ano,
+onboarding feito pela própria dona do produto). A partir desta mudança, uma
+empresa cliente **não gerencia mais a própria estrutura** — só usa o
+sistema no dia a dia (motoristas abastecendo, escritório acompanhando
+dashboard/agenda/alertas). Cadastro de veículo e de usuário novo viraram
+ferramentas exclusivas do dono do sistema.
+
+- ✅ **"Convidar usuário" saiu de Configurações.** `convidarUsuario`
+  removido de `configuracoes/actions.ts`; card removido de
+  `configuracoes/page.tsx` (texto novo: "fale com o suporte"); componente
+  `convidar-usuario-form.tsx` apagado (não só desconectado). **Não mexeu**
+  em `/definir-senha` nem no mecanismo de convite por e-mail do Supabase
+  Auth — são compartilhados com `criarEmpresa` (usado pela própria dona pra
+  onboardar cliente novo), então continuam existindo, só que agora só
+  acionados a partir de `admin-sistema`.
+- ✅ **Substituto em `admin-sistema`**: `convidarUsuarioParaEmpresa` (nova
+  action) + `ConvidarUsuarioEmpresaForm` — mesmo mecanismo de convite, só
+  que com um seletor de EMPRESA (a empresa já existe, diferente de
+  `criarEmpresa` que cria tenant novo). Restrito a `ehDonoSistema`.
+- ✅ **"Novo veículo" saiu da aba Ônibus.** Botão removido de `onibus/page.tsx`;
+  rota `/onibus/novo` apagada inteira; `criarVeiculo` removido de
+  `onibus/actions.ts`. **Edição de veículo já cadastrado não mudou** —
+  `atualizarVeiculo` continua liberado pra gerente/administrador da própria
+  empresa (só cadastro NOVO ficou restrito). `VeiculoForm` simplificado pra
+  só editar (o modo "criar" que ele tinha morreu junto com `/onibus/novo` —
+  removido de vez, não deixado morto no código).
+- ✅ **Substituto em `admin-sistema`**: `criarVeiculoParaEmpresa` (nova
+  action) + `CriarVeiculoEmpresaForm` — mesmos campos de `VeiculoForm`,
+  **sem upload de foto** (o bucket `fotos-veiculos` é isolado por sessão da
+  própria empresa; o dono do sistema agindo fora de qualquer empresa não
+  teria essa sessão — se o cliente quiser foto, edita depois pela própria
+  conta). Restrito a `ehDonoSistema`.
+- ✅ **Nenhuma das duas novas actions grava em `edicoes_log`** — mesmo
+  motivo de `criarEmpresa` já não gravar: `edicoes_log.usuario_id` tem FK
+  pra `usuarios(id)`, e o dono do sistema normalmente não tem linha própria
+  na tabela `usuarios` das empresas que ele não administra. Logar com o id
+  dele seria uma FK tecnicamente válida mas atribuiria a ação à pessoa
+  errada.
+- ✅ **Motivo de negócio por trás da mudança** (registrado aqui pra não se
+  perder): sem essa restrição, uma empresa cliente podia cadastrar veículos
+  de OUTRA empresa (que não pagou nada) na própria conta — like "emprestar"
+  o contrato pra terceiros. Com só o LuckTank cadastrando, isso fica
+  fechado.
+- ✅ **E-mail e WhatsApp de contato atualizados** em `/privacidade` e
+  `/termos`: `luckfrotas@gmail.com` · (13) 99770-0901.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. Testado no navegador (dev local): "Novo veículo"
+confirmado ausente da aba Ônibus (km_atual do veículo de teste continua
+160000, sem regressão); "Convidar usuário" confirmado ausente de
+Configurações, com o texto novo no lugar; `/admin-sistema` confirmado
+bloqueando corretamente uma conta que não é dona do sistema (o gate de
+acesso continua funcionando). **Não verificado**: os dois formulários
+novos (`ConvidarUsuarioEmpresaForm`, `CriarVeiculoEmpresaForm`) nunca foram
+abertos num navegador de verdade — não há credencial de dono do sistema
+disponível nesta sessão pra testar. Passaram por `tsc`/`eslint`/`build`,
+não por uso real ainda.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

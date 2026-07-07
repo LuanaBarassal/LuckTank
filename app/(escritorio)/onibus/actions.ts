@@ -6,47 +6,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { registrarLog } from "@/lib/edicoes-log";
 import { verificarPinDoUsuario } from "@/lib/auth/pin";
-import { veiculoSchema, veiculoEdicaoSchema } from "@/lib/validacao/schemas";
+import { veiculoEdicaoSchema } from "@/lib/validacao/schemas";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
 
-export async function criarVeiculo(payload: unknown): Promise<Resultado<{ id: string }>> {
-  const usuario = await getUsuarioAtual();
-  if (!usuario) return { error: "Não autenticado." };
-  if (usuario.papel !== "administrador") {
-    return { error: "Só administradores podem cadastrar veículos." };
-  }
-
-  const parsed = veiculoSchema.safeParse(payload);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
-  }
-
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("veiculos")
-    .insert({ ...parsed.data, empresa_id: usuario.empresa_id })
-    .select()
-    .single();
-
-  if (error) {
-    return { error: error.code === "23505" ? "Já existe um veículo com essa placa." : "Não foi possível cadastrar." };
-  }
-
-  await registrarLog({
-    empresaId: usuario.empresa_id,
-    tabela: "veiculos",
-    registroId: data.id,
-    usuarioId: usuario.id,
-    acao: "insert",
-    antes: null,
-    depois: data,
-  });
-
-  revalidatePath("/onibus");
-  return { data: { id: data.id } };
-}
-
+// Cadastro de veículo novo saiu daqui — só o LuckTank adiciona veículo a uma
+// empresa agora (ver criarVeiculoParaEmpresa em admin-sistema/actions.ts).
+// Edição de veículo já existente continua igual, sem mudança de permissão.
 export async function atualizarVeiculo(id: string, payload: unknown): Promise<Resultado<{ id: string }>> {
   const usuario = await getUsuarioAtual();
   if (!usuario) return { error: "Não autenticado." };
