@@ -1334,6 +1334,175 @@ Pedido do usuário pós-Bloco 4 de export, em 3 blocos.
   veículo), no navegador — servidor confirmou `200` nos 4 casos.
   `tsc`, `lint`, `test` (65) e `build` confirmados limpos.
 
+## Hardening pós-auditoria externa (2026-07-07)
+
+Auditoria geral independente do sistema (banco de dados/RLS, API/server
+actions e lógica de negócio revisados em paralelo, achados reconferidos
+manualmente no código-fonte antes de qualquer correção — não só aceitos do
+relatório). Achados e o que foi feito:
+
+- ✅ **Corrida de concorrência no bloqueio de KM (alto).** O trigger
+  `atualiza_km_veiculo` (0001) sobrescrevia `veiculos.km_atual`
+  incondicionalmente, sem lock e sem comparar com o valor mais recente — a
+  regra "KM não pode retroceder" (invariante #6) vivia só na aplicação,
+  comparando um valor lido ANTES do insert. Dois inserts concorrentes pro
+  mesmo veículo (ex.: fila offline de dois celulares sincronizando junto)
+  podiam os dois passar na checagem da aplicação antes de qualquer um gravar.
+  `0011_km_trava_concorrencia.sql`: novo trigger `BEFORE INSERT` que trava a
+  linha do veículo (`for update`) e só então compara, com `errcode`
+  customizado (`LT001`) — o lock fica retido até o fim da transação do
+  insert, serializando concorrência real no Postgres. `app/api/abastecimentos/route.ts`
+  atualizado pra tratar `LT001` como 409 (mesmo padrão já usado pro `23505`
+  de `registro_uuid`). A checagem antiga em `route.ts` continua (feedback
+  rápido, sem round-trip de erro), mas o banco passou a ser a fonte de
+  verdade. **Aplicada no projeto Supabase real** (usuário rodou direto no SQL
+  Editor) e **confirmada via `supabase db query --linked`**: trigger
+  `valida_km_nao_retrocede` presente em `pg_trigger` de `abastecimentos`,
+  ao lado do `atualiza_km_veiculo` original. Como a aplicação foi manual (não
+  via `supabase db push`), a tabela de histórico de migrations do projeto não
+  sabia disso — corrigido com `supabase migration repair --linked --status
+  applied 0011 0012`; `supabase migration list` confirma as 12 migrations
+  sincronizadas local×remoto. **Ainda não testado**: nenhum insert real
+  disparou o trigger ainda (só a existência dele foi confirmada, não o
+  comportamento sob concorrência de verdade).
+- ✅ **`motorista_id` não revalidado contra a empresa (alto).**
+  `/api/abastecimentos` resolvia `veiculo_id`/`empresa_id` a partir do
+  `qr_token` (correto), mas aceitava o `motorista_id` do client sem checar se
+  pertencia à mesma empresa — quebrava o invariante #2 ("nunca confiar em id
+  vindo do client"). `route.ts` agora confere `motorista_id` contra
+  `empresa_id` do veículo antes do insert; se não bater, trata como se não
+  tivesse vindo (cai pro nome livre) e retorna 400 se nenhum dos dois
+  existir.
+- ✅ **Sem CHECK constraints de valor em `abastecimentos` (médio).**
+  `litros`/`valor_total`/`km_atual` eram `not null` mas sem `check (> 0)` —
+  garantia vivia só no Zod. `0012_abastecimentos_check_constraints.sql`
+  adiciona os três `check`. Aditivo, sem risco pro dado existente (Zod
+  sempre validou antes de gravar). **Aplicada e confirmada** junto com a
+  0011 — `pg_constraint` de `abastecimentos` mostra
+  `abastecimentos_litros_positivo`, `abastecimentos_valor_total_positivo` e
+  `abastecimentos_km_atual_positivo`, os três com a definição esperada.
+- ✅ **Fila offline sem visibilidade nenhuma (médio).** Um item que falhasse
+  pra sempre (ex.: bloqueado pela regra de KM) ficava marcado `"erro"` no
+  IndexedDB do aparelho sem nenhuma tela mostrando isso — pra um produto
+  anti-fraude, "o abastecimento nunca entrou no sistema" é exatamente o
+  cenário que se quer evitar, e podia acontecer em silêncio no celular do
+  motorista. Novo `components/motorista/fila-pendencias.tsx`: lista os itens
+  em erro (data, nº de tentativas, motivo), com "tentar enviar novamente"
+  (reusa `sincronizarFila()`) e "descartar este registro"; renderizado no
+  topo do wizard (`fluxo-abastecimento.tsx`), visível em qualquer passo.
+  **Não testado no navegador ainda** (só `tsc`/`lint`/`test` — ver abaixo).
+- ✅ **Nit — comentário desatualizado.** `lib/supabase/admin.ts` dizia que o
+  client admin só podia ser importado dentro de `app/api/**`; corrigido pra
+  refletir o uso real (também correto) em Server Actions.
+- ⏸️ **Resolução de alerta sem checar papel (médio) — NÃO alterado.** A
+  policy `alertas_update` libera qualquer usuário autenticado da empresa
+  (sem checar papel), e o comentário em `alertas/actions.ts` mostra que isso
+  foi uma decisão deliberada ("resolver é ação operacional leve, não edição
+  de dado de negócio"), não um descuido. Fica pendente de decisão do usuário
+  antes de mexer — restringir pra gerente/administrador teria efeito de
+  produto (supervisor deixaria de poder resolver alerta sozinho).
+- ⏸️ **Rate limit inerte (médio) — NÃO é código.** `UPSTASH_REDIS_REST_URL`/`_TOKEN`
+  não configuradas neste ambiente — comportamento correto por design (falha
+  aberta), mas é ação operacional do usuário (criar conta Upstash), não
+  correção de código.
+- ⏸️ **Cascade delete amplo a partir de `empresas` (baixo) — sem ação.** Sem
+  UI de exclusão de empresa hoje, nada pra corrigir ainda; só vira relevante
+  se/quando `admin-sistema` ganhar essa função.
+- ⏸️ **Tolerâncias de fraude em 3 arquivos (baixo) — sem ação.** Os
+  comentários em `regras.ts`/`estatisticas.ts` já explicam que são números
+  INDEPENDENTES de propósito (comparam coisas conceitualmente diferentes:
+  histórico do próprio veículo, ficha técnica do fabricante, exibição no
+  dashboard) — unificar seria incorreto, não só reorganização.
+
+**Verificado depois das mudanças**: `npm test` — 89/89 passando (mesmos 89
+de antes, nenhum novo teste unitário adicionado pras migrations/rota, já que
+a correção de concorrência só é observável com banco real); `tsc --noEmit`
+limpo; `eslint` limpo nos arquivos tocados. Migrations 0011/0012 aplicadas
+no projeto Supabase real pelo usuário (SQL Editor) e a EXISTÊNCIA do trigger
+e das três constraints confirmada via `supabase db query --linked` contra
+`pg_trigger`/`pg_constraint`; histórico de migrations reparado (`supabase
+migration repair --linked --status applied 0011 0012`) pra `supabase db
+push` futuro não tentar recriar o que já existe. **Ainda não verificado**:
+nenhum teste de COMPORTAMENTO ponta a ponta — não foi provocado um insert
+real com KM menor (nem concorrente) pra ver o 409 do `LT001` acontecer, nem
+um insert com litros/valor ≤ 0 pra ver o `check` barrar; a tela de fila
+pendente (`fila-pendencias.tsx`) não foi aberta num navegador real.
+
+## Agenda, valor por litro e OCR (2026-07-07)
+
+Quatro pedidos do usuário, sem relação com a auditoria anterior:
+
+- ✅ **Agenda de abastecimentos (feature nova).** `/agenda`
+  (`app/(escritorio)/agenda/page.tsx`): calendário mensal (grade fixa de 6
+  semanas, `lib/dashboard/agenda.ts` — função pura, testada em
+  `agenda.test.ts`, 12 casos), cada dia com um badge de contagem; clicar num
+  dia mostra abaixo TODOS os abastecimentos daquele dia com todos os campos
+  (litros, valor total, valor/litro, KM, KM rodado, consumo, posto,
+  bandeira, forma de pagamento, nº da nota, motorista, veículo). Filtro
+  opcional por veículo (`components/escritorio/filtro-veiculo-agenda.tsx`,
+  reaproveitando o combobox `SelectBusca` já existente). Setas ← → navegam
+  entre meses preservando o filtro de veículo. Link novo no menu lateral.
+  **Importante sobre "tempo real"**: a agenda não usa nenhum mecanismo de
+  push/websocket — mesmo padrão do resto do escritório (Server Component,
+  busca fresca a cada carregamento de página). Um abastecimento novo aparece
+  assim que alguém (re)carrega `/agenda`, não instantaneamente na tela de
+  quem já está com ela aberta. Isso é consistente com o resto do app (não
+  existe real-time em nenhuma outra tela) — implementar push exigiria
+  Supabase Realtime, fora do escopo pedido.
+- ✅ **Valor por litro ausente na confirmação (bug de UI).** O Gemini já
+  extraía `valor_litro` desde a Fase 4 (`lib/ocr/provider.ts`), mas o valor
+  nunca chegava a `ValoresFormulario` nem à tela — ficava descartado
+  silenciosamente depois do OCR. Em vez de plumbar o campo extraído (que
+  poderia divergir do que o motorista digitasse depois), `passo-formulario.tsx`
+  agora CALCULA e mostra "Valor por litro" ao vivo (`valorTotal / litros`),
+  sempre consistente com o que está nos dois campos naquele instante —
+  inclusive se o motorista corrigir litros ou valor total manualmente. Não
+  é um campo novo do banco nem do schema, só um derivado de exibição (mesmo
+  espírito do `consumo_kml` já ser uma coluna gerada).
+- ✅ **OCR mais confiável (schema estruturado + prompt v2).**
+  `lib/ocr/gemini-provider.ts`: adicionado `responseSchema` (JSON Schema
+  espelhando `dadosExtraidosSchema`, com `required` em todos os campos) —
+  força o Gemini a devolver o TIPO certo em cada campo (número nunca vem
+  como string "12,50 L"), o que deveria reduzir os casos de
+  `zod.safeParse` falhando em foto nítida só por causa do tipo errado ou de
+  uma chave ausente. `temperature: 0.1` (antes usava o default do modelo,
+  mais alto) — isto é extração determinística de um dado que já está na
+  imagem, não geração criativa; temperatura mais baixa deveria reduzir
+  "chute" em texto ambíguo. Novo prompt `extrair-abastecimento.v2.ts`
+  (v1 preservado, nunca editado — mesmo espírito de "não editar migrations
+  antigas": abastecimentos antigos guardam `ocr_prompt_version` e continuam
+  rastreáveis ao texto exato que os gerou): reforça a conversão de vírgula
+  brasileira pra ponto decimal, e lista os rótulos comuns de cada campo em
+  cupom brasileiro (ex.: "V.UNIT"/"PREÇO UNIT" pra valor_litro, "COO"/"NFC-e
+  Nº" pra numero_nota) — a hipótese é que parte das fotos nítidas que
+  falhavam simplesmente usavam um rótulo que o prompt v1 não mencionava.
+- ✅ **OCR mais rápido (comprimir antes de enviar).** O maior suspeito de
+  lentidão: `handleContinuarFoto` (`fluxo-abastecimento.tsx`) mandava a foto
+  ORIGINAL da câmera (tipicamente vários MB) sem nenhuma compressão pro
+  `/api/ocr` — só o caminho de gravação final comprimia
+  (`comprimirImagem()`, já existente). Agora a foto é comprimida
+  (1600px/0.85 — mais generosa que o 1280/0.75 usado pra gravação final, pra
+  não perder nitidez de texto miúdo do cupom) antes do envio pro OCR. Em
+  rede móvel, upload de um arquivo 80-90% menor deveria ser o ganho de tempo
+  dominante — bem maior que qualquer ajuste no processamento do Gemini em
+  si, que esta versão do SDK (`@google/generative-ai`, já deprecado pelo
+  Google em favor de `@google/genai`) não dá controle fino sobre (não expõe
+  `thinkingConfig` pra desligar "raciocínio" do modelo, se for isso que o
+  "gemini-flash-latest" atual usa por baixo).
+
+**Verificado**: `npm test` — 101/101 passando (89 de antes + 12 novos de
+`agenda.test.ts`); `tsc --noEmit`, `eslint .` e `npm run build` limpos,
+incluindo a rota nova `/agenda` gerada sem erro. **Não verificado**:
+nenhuma chamada real ao Gemini foi feita (exigiria consumir cota de
+produção) — a melhora de velocidade/precisão do OCR é uma hipótese bem
+fundamentada (tamanho de payload, schema estruturado, temperatura,
+prompt mais específico), não um número medido antes/depois. A tela
+`/agenda` não foi aberta num navegador real. Se a lentidão do Gemini
+persistir depois disso, o próximo passo seria migrar pro SDK novo
+(`@google/genai`) pra poder desligar `thinkingConfig` explicitamente — não
+foi feito agora por ser uma troca de dependência maior, fora do escopo deste
+pedido.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

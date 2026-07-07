@@ -9,6 +9,7 @@ import PassoFormulario, {
   type ValoresFormulario,
 } from "@/components/motorista/passo-formulario";
 import PassoSucesso from "@/components/motorista/passo-sucesso";
+import FilaPendencias from "@/components/motorista/fila-pendencias";
 import type { OcrConfianca, OcrResultado } from "@/lib/ocr/provider";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { adicionarNaFila } from "@/lib/offline/db";
@@ -178,7 +179,14 @@ export default function FluxoAbastecimento({
 
     const formData = new FormData();
     formData.set("qr_token", qrToken);
-    formData.set("foto", fotoFile);
+    // A foto da câmera do celular vem sem compressão (geralmente vários MB) —
+    // isso é o maior fator de lentidão aqui: upload em rede móvel domina o
+    // tempo de resposta, muito mais que o processamento do Gemini em si.
+    // 1600px/0.85 (mais generoso que o 1280/0.75 usado antes de subir pro
+    // Storage) preserva a nitidez de texto miúdo do cupom (CNPJ, nº da nota)
+    // e ainda reduz o payload em geral 80-90%.
+    const fotoParaOcr = await comprimirImagem(fotoFile, 1600, 0.85);
+    formData.set("foto", fotoParaOcr, fotoFile.name);
 
     try {
       const resposta = await fetch("/api/ocr", { method: "POST", body: formData });
@@ -363,6 +371,10 @@ export default function FluxoAbastecimento({
               : "Nenhum abastecimento registrado ainda."}
           </p>
         </header>
+
+        <div className="px-4">
+          <FilaPendencias />
+        </div>
 
         {passo !== "sucesso" && (
           <div className="px-4">

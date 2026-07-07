@@ -103,11 +103,34 @@ export async function POST(request: NextRequest) {
   }
 
   // BLOQUEIO real (não é alerta leve): KM não pode ser menor que o último registrado.
+  // Checagem rápida aqui (feedback sem round-trip de erro); o trigger
+  // `valida_km_nao_retrocede` (migration 0011) é quem garante isso de fato
+  // sob concorrência, travando a linha do veículo dentro da transação do insert.
   if (kmMenorQueUltimoRegistrado(parsed.data.km_atual, veiculo.km_atual)) {
     return NextResponse.json(
       { error: `O KM não pode ser menor que o último registrado (${veiculo.km_atual}).` },
       { status: 409 }
     );
+  }
+
+  // `motorista_id` nunca deve ser confiado cegamente vindo do client (mesmo
+  // princípio de veiculo_id/empresa_id, resolvidos só a partir do qr_token):
+  // sem essa checagem, um motorista_id de OUTRA empresa poderia ser
+  // vinculado ao abastecimento, quebrando a integridade referencial entre
+  // tenants. Se não pertencer à empresa do veículo, trata como se não tivesse
+  // vindo — nunca bloqueia o registro por causa disso, só cai pro nome livre.
+  let motoristaId = parsed.data.motorista_id ?? null;
+  if (motoristaId) {
+    const { data: motorista } = await admin
+      .from("motoristas")
+      .select("id")
+      .eq("id", motoristaId)
+      .eq("empresa_id", veiculo.empresa_id)
+      .maybeSingle();
+    if (!motorista) motoristaId = null;
+  }
+  if (!motoristaId && !parsed.data.motorista_nome_livre) {
+    return NextResponse.json({ error: "Motorista inválido." }, { status: 400 });
   }
 
   let fotoUrl: string | null = null;
@@ -158,7 +181,7 @@ export async function POST(request: NextRequest) {
     .insert({
       empresa_id: veiculo.empresa_id,
       veiculo_id: veiculo.id,
-      motorista_id: parsed.data.motorista_id,
+      motorista_id: motoristaId,
       motorista_nome_livre: parsed.data.motorista_nome_livre,
       data_abastecimento: parsed.data.data_abastecimento,
       hora: parsed.data.hora,
@@ -199,6 +222,18 @@ export async function POST(request: NextRequest) {
       if (existente) {
         return NextResponse.json({ id: existente.id });
       }
+    }
+
+    // Trigger `valida_km_nao_retrocede` (migration 0011) — mesma regra da
+    // checagem acima, mas travada por lock de linha, então é a que vale de
+    // fato sob concorrência (duas sincronizações da fila offline ao mesmo
+    // tempo, por exemplo). Mensagem genérica de propósito: o km_atual mais
+    // recente pode já ter mudado entre a checagem acima e este ponto.
+    if (insertError.code === "LT001") {
+      return NextResponse.json(
+        { error: "O KM não pode ser menor que o último registrado para este veículo." },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json(
