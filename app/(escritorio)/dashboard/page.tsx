@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardTitle } from "@/components/ui/card";
 import GraficoBarra from "@/components/escritorio/grafico-barra";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
+import LinkExportacaoProtegida from "@/components/escritorio/link-exportacao-protegida";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import {
   parseFiltrosAbastecimento,
@@ -103,24 +104,15 @@ export default async function DashboardPage({
         <div className="mb-5 mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-slate-500">Período: {periodoTexto}</p>
           <div className="flex items-center gap-2">
-            <a
-              href={`/api/export?${queryExport}&formato=xlsx`}
-              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-            >
+            <LinkExportacaoProtegida href={`/api/export?${queryExport}&formato=xlsx`}>
               Exportar Excel
-            </a>
-            <a
-              href={`/api/export?${queryExport}&formato=pdf`}
-              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-            >
+            </LinkExportacaoProtegida>
+            <LinkExportacaoProtegida href={`/api/export?${queryExport}&formato=pdf`}>
               Exportar PDF
-            </a>
-            <a
-              href={`/api/export/fotos?${queryExport}`}
-              className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-            >
+            </LinkExportacaoProtegida>
+            <LinkExportacaoProtegida href={`/api/export/fotos?${queryExport}`}>
               Baixar fotos (ZIP)
-            </a>
+            </LinkExportacaoProtegida>
           </div>
         </div>
 

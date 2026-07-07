@@ -377,6 +377,7 @@ export type Database = {
           id: string
           nome: string
           papel: string
+          pin_hash: string | null
         }
         Insert: {
           criado_em?: string
@@ -385,6 +386,7 @@ export type Database = {
           id: string
           nome: string
           papel: string
+          pin_hash?: string | null
         }
         Update: {
           criado_em?: string
@@ -393,6 +395,7 @@ export type Database = {
           id?: string
           nome?: string
           papel?: string
+          pin_hash?: string | null
         }
         Relationships: [
           {

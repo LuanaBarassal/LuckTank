@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { registrarLog } from "@/lib/edicoes-log";
+import { verificarPinDoUsuario } from "@/lib/auth/pin";
 import { veiculoSchema, veiculoEdicaoSchema } from "@/lib/validacao/schemas";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
@@ -84,6 +86,86 @@ export async function atualizarVeiculo(id: string, payload: unknown): Promise<Re
 
   revalidatePath("/onibus");
   revalidatePath(`/onibus/${id}`);
+  return { data: { id } };
+}
+
+// Exclusão de abastecimento — invariante #4 do projeto (nunca reabrir uma
+// policy de RLS de UPDATE/DELETE pra abastecimentos, ver 0006): todo o
+// caminho passa pela service role, com a checagem de papel e de PIN feitas
+// aqui no código antes de mutar. Soft delete (status = 'excluido'), nunca
+// DELETE de linha de verdade — mantém a trilha de auditoria e o histórico
+// intacto, mesmo padrão de `alternarAtivoVeiculo` pra veículos.
+export async function excluirAbastecimento(id: string, pin: string): Promise<Resultado<{ id: string }>> {
+  const usuario = await getUsuarioAtual();
+  if (!usuario) return { error: "Não autenticado." };
+  if (!["gerente", "administrador"].includes(usuario.papel)) {
+    return { error: "Só gerente ou administrador podem excluir abastecimentos." };
+  }
+
+  const pinValido = await verificarPinDoUsuario(usuario.id, pin);
+  if (!pinValido) {
+    return { error: "PIN incorreto ou não configurado. Configure em Configurações." };
+  }
+
+  const admin = createAdminClient();
+
+  // Nunca confia em `id` sozinho — reconfirma que pertence à empresa de
+  // quem está chamando, mesmo vindo de uma Server Action (não de input
+  // arbitrário de rota pública, mas o princípio é o mesmo do resto do app).
+  const { data: antes } = await admin
+    .from("abastecimentos")
+    .select("*")
+    .eq("id", id)
+    .eq("empresa_id", usuario.empresa_id)
+    .single();
+
+  if (!antes) return { error: "Abastecimento não encontrado." };
+  if (antes.status !== "ativo") return { error: "Este abastecimento já foi excluído." };
+
+  const { data: depois, error } = await admin
+    .from("abastecimentos")
+    .update({
+      status: "excluido",
+      excluido_por: usuario.id,
+      excluido_em: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error || !depois) return { error: "Não foi possível excluir." };
+
+  await registrarLog({
+    empresaId: usuario.empresa_id,
+    tabela: "abastecimentos",
+    registroId: id,
+    usuarioId: usuario.id,
+    acao: "delete",
+    antes,
+    depois,
+  });
+
+  // km_atual do veículo foi setado pelo trigger de INSERT deste (ou de outro)
+  // abastecimento — excluir não reverte isso sozinho. Recalcula a partir do
+  // abastecimento ativo mais recente que sobrou; se não sobrar nenhum, deixa
+  // como está (não há valor "original" registrado em lugar nenhum pra
+  // restaurar com segurança).
+  const { data: maisRecente } = await admin
+    .from("abastecimentos")
+    .select("km_atual")
+    .eq("veiculo_id", antes.veiculo_id)
+    .eq("status", "ativo")
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (maisRecente) {
+    await admin.from("veiculos").update({ km_atual: maisRecente.km_atual }).eq("id", antes.veiculo_id);
+  }
+
+  revalidatePath(`/onibus/${antes.veiculo_id}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/agenda");
   return { data: { id } };
 }
 

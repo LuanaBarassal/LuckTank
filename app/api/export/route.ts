@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
+import { verificarPinDoUsuario } from "@/lib/auth/pin";
 import {
   parseFiltrosAbastecimento,
   resolverPeriodo,
@@ -29,6 +30,19 @@ export async function GET(request: NextRequest) {
   const usuario = await getUsuarioAtual();
   if (!usuario) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  // PIN sempre no header, nunca na query string (evita ficar gravado em
+  // histórico do navegador/log de acesso) — ver lib/auth/pin.ts. Reverificado
+  // aqui mesmo que o client já tenha confirmado o PIN antes de chamar (nunca
+  // confiar que uma tela já validou algo por conta própria).
+  const pin = request.headers.get("x-lucktank-pin") ?? "";
+  const pinValido = await verificarPinDoUsuario(usuario.id, pin);
+  if (!pinValido) {
+    return NextResponse.json(
+      { error: "PIN incorreto ou não configurado. Configure em Configurações." },
+      { status: 403 }
+    );
   }
 
   const searchParams = Object.fromEntries(request.nextUrl.searchParams.entries());

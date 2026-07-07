@@ -1538,6 +1538,81 @@ realmente estava errado no cupom.
 (foto real, corrigir o valor por litro manualmente e conferir o que fica
 gravado) — só passou pelos checks estáticos.
 
+## PIN de segurança + exclusão de abastecimento (2026-07-07)
+
+Pedido do usuário: mesmo padrão do LuckFrota (produto irmão) — PIN de 6
+dígitos exigido pra exportar Excel/PDF/ZIP, e nova capacidade de excluir um
+abastecimento, também só com PIN.
+
+- **Diferença deliberada em relação ao LuckFrota**: lá o PIN fica em texto
+  puro em `profiles.pin_acesso` e a comparação roda no client (o perfil
+  inteiro, PIN incluso, já chega no navegador). Aqui o hash é gerado com
+  salt (`scrypt`, `lib/auth/pin.ts`) e a verificação SEMPRE roda no
+  servidor — nunca pela sessão do usuário, porque a policy `usuarios_select`
+  (0001) libera ler colegas da mesma empresa; se `pin_hash` fosse lido pelo
+  client autenticado, qualquer colega poderia ler o hash de qualquer outro
+  só trocando o `id` na query. O LuckTank já era construído em cima de
+  "nunca confiar no client" (RLS + Server Actions em todo canto) — replicar
+  a comparação client-side do LuckFrota teria sido inconsistente com o
+  resto do próprio projeto.
+- **PIN por usuário** (não por empresa): cada um define o seu, mesmo modelo
+  do LuckFrota. Sem PIN definido, as ações protegidas ficam bloqueadas até
+  configurar (decisão: não deixar passar batido só porque ninguém configurou
+  ainda — o pedido foi "vai precisar desse pin", não "se tiver configurado").
+- ✅ **Migration `0014_usuarios_pin.sql`**: `usuarios.pin_hash text`
+  (nullable). Aplicada via `supabase db push --linked` e confirmada
+  (`information_schema.columns`); `types/database.ts` regenerado.
+- ✅ **`lib/auth/pin.ts`**: hash com `scrypt` (nativo do Node, sem
+  dependência nova) + salt aleatório por usuário; comparação com
+  `timingSafeEqual` (não `===`, que vaza timing). Único lugar do projeto que
+  lê `pin_hash`, sempre via service role.
+- ✅ **Configurações**: novo card "PIN de segurança" (`components/escritorio/pin-form.tsx`
+  + `definirPin`/`temPinDefinido` em `configuracoes/actions.ts`) — cada
+  usuário só define o PRÓPRIO PIN (a policy `usuarios_update` da 0003 exige
+  administrador; "definir meu PIN" precisa valer pra qualquer papel, então a
+  escrita usa service role com a checagem "é o próprio usuário" feita no
+  código, não pela policy).
+- ✅ **Contexto de desbloqueio** (`components/escritorio/pin-context.tsx` +
+  `modal-pin.tsx`, montado em `app/(escritorio)/layout.tsx`): pede o PIN uma
+  vez, guarda em memória (nunca localStorage/cookie) e reusa nas próximas
+  ações protegidas da mesma sessão de navegador — mesma UX do LuckFrota
+  ("digite uma vez, vale até sair"), mas o valor guardado é reenviado a cada
+  ação pro servidor reverificar de verdade, nunca um booleano em que o
+  servidor simplesmente confia. Limpo no logout (`LogoutButton` chama
+  `bloquear()` antes de `signOut()`).
+- ✅ **Export protegido**: os botões de Excel/PDF/ZIP (dashboard e aba do
+  ônibus) trocaram de `<a href>` puro pra `components/escritorio/link-exportacao-protegida.tsx`
+  — precisa ser um clique em JS, não navegação direta, porque o PIN vai num
+  header (`x-lucktank-pin`), nunca na query string (senão ficaria gravado em
+  histórico do navegador/logs de acesso). Busca o arquivo via `fetch`, monta
+  um blob e simula o clique num `<a>` temporário pra disparar o download.
+  `/api/export` e `/api/export/fotos` reverificam o PIN no servidor
+  (`verificarPinDoUsuario`) antes de gerar qualquer arquivo — nunca confiam
+  que o modal já validou antes de chamar.
+- ✅ **Exclusão de abastecimento** (novo): botão "Excluir" por linha no
+  histórico da aba do ônibus (`components/escritorio/botao-excluir-abastecimento.tsx`),
+  só visível pra gerente/administrador (mesma regra de
+  `alternarAtivoVeiculo`). Confirmação nativa (`window.confirm`) antes do
+  PIN. `excluirAbastecimento` (`onibus/actions.ts`) segue o invariante #4:
+  checa papel, checa PIN, usa service role (a policy de RLS de
+  abastecimentos não libera UPDATE pra client autenticado desde a 0006, de
+  propósito), soft delete (`status = 'excluido'`, usando as colunas
+  `excluido_por`/`excluido_em` que já existiam desde a 0001 mas nunca tinham
+  sido usadas), grava em `edicoes_log`. **Efeito colateral tratado**: como
+  `veiculos.km_atual` só é setado pelo trigger de INSERT, excluir o
+  abastecimento mais recente de um veículo não reverte isso sozinho —
+  `excluirAbastecimento` recalcula `km_atual` a partir do abastecimento
+  ativo mais recente que sobrar (fica como estava se não sobrar nenhum, por
+  não haver um valor "original" registrado em lugar nenhum pra restaurar).
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos; migration aplicada e coluna confirmada no projeto
+real; histórico de migrations sincronizado (`supabase migration list`).
+**Não verificado**: nenhum teste real no navegador (criar um PIN de
+verdade, exportar um arquivo, excluir um abastecimento de teste e conferir
+`edicoes_log` + `km_atual` recalculado) — só passou pelos checks estáticos
+e pela confirmação de schema no banco.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

@@ -3,20 +3,31 @@ import { createClient } from "@/lib/supabase/server";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Card, CardTitle } from "@/components/ui/card";
 import ConvidarUsuarioForm from "@/components/escritorio/convidar-usuario-form";
+import PinForm from "@/components/escritorio/pin-form";
+import { temPinDefinido } from "./actions";
 
 export default async function ConfiguracoesPage() {
   const usuario = await getUsuarioAtual();
   if (!usuario) redirect("/login");
 
   const supabase = await createClient();
-  const { data: usuarios } = await supabase
-    .from("usuarios")
-    .select("id, nome, email, papel")
-    .order("nome");
+  const [{ data: usuarios }, jaTemPin] = await Promise.all([
+    supabase.from("usuarios").select("id, nome, email, papel").order("nome"),
+    temPinDefinido(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="font-title text-2xl font-bold text-white">Configurações</h1>
+
+      <Card variant="dark" className="max-w-md">
+        <CardTitle variant="dark">PIN de segurança</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Seu PIN pessoal de 6 dígitos, exigido antes de exportar Excel/PDF/fotos e antes de
+          excluir um abastecimento. {jaTemPin ? "Você já tem um PIN configurado." : "Você ainda não configurou um PIN — essas ações ficarão bloqueadas até configurar."}
+        </p>
+        <PinForm jaTemPin={jaTemPin} />
+      </Card>
 
       <Card variant="dark" className="max-w-2xl">
         <CardTitle variant="dark">Usuários do escritório</CardTitle>

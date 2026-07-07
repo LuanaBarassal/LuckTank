@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
+import { verificarPinDoUsuario } from "@/lib/auth/pin";
 import {
   parseFiltrosAbastecimento,
   resolverPeriodo,
@@ -32,6 +33,15 @@ export async function GET(request: NextRequest) {
   const usuario = await getUsuarioAtual();
   if (!usuario) {
     return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
+  }
+
+  const pin = request.headers.get("x-lucktank-pin") ?? "";
+  const pinValido = await verificarPinDoUsuario(usuario.id, pin);
+  if (!pinValido) {
+    return NextResponse.json(
+      { error: "PIN incorreto ou não configurado. Configure em Configurações." },
+      { status: 403 }
+    );
   }
 
   const searchParams = Object.fromEntries(request.nextUrl.searchParams.entries());

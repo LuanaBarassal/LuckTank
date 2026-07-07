@@ -7,6 +7,8 @@ import VeiculoForm from "@/components/escritorio/veiculo-form";
 import VeiculoAtivoToggle from "@/components/escritorio/veiculo-ativo-toggle";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
 import FotoComprovante from "@/components/escritorio/foto-comprovante";
+import LinkExportacaoProtegida from "@/components/escritorio/link-exportacao-protegida";
+import BotaoExcluirAbastecimento from "@/components/escritorio/botao-excluir-abastecimento";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import {
@@ -157,24 +159,15 @@ export default async function VeiculoDetalhePage({
       </Suspense>
 
       <div className="-mt-4 flex justify-end gap-2">
-        <a
-          href={`/api/export?${queryExport}&formato=xlsx`}
-          className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-        >
+        <LinkExportacaoProtegida href={`/api/export?${queryExport}&formato=xlsx`}>
           Exportar Excel
-        </a>
-        <a
-          href={`/api/export?${queryExport}&formato=pdf`}
-          className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-        >
+        </LinkExportacaoProtegida>
+        <LinkExportacaoProtegida href={`/api/export?${queryExport}&formato=pdf`}>
           Exportar PDF
-        </a>
-        <a
-          href={`/api/export/fotos?${queryExport}`}
-          className="inline-flex min-h-touch items-center justify-center rounded-xl border-2 border-cyan-600 px-4 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10"
-        >
+        </LinkExportacaoProtegida>
+        <LinkExportacaoProtegida href={`/api/export/fotos?${queryExport}`}>
           Baixar fotos (ZIP)
-        </a>
+        </LinkExportacaoProtegida>
       </div>
 
       <ResumoEstatisticas
@@ -260,6 +253,7 @@ export default async function VeiculoDetalhePage({
                   <th className="py-3 pr-5 font-medium">Total</th>
                   <th className="py-3 pr-5 font-medium">Consumo (km/L)</th>
                   <th className="py-3 pr-5 font-medium">Motorista</th>
+                  {podeEditar && <th className="py-3 pr-5 font-medium">Ações</th>}
                 </tr>
               </thead>
               <tbody>
@@ -314,6 +308,11 @@ export default async function VeiculoDetalhePage({
                       <td className="py-3.5 pr-5">
                         {a.motorista_nome_livre ?? (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ?? "—"}
                       </td>
+                      {podeEditar && (
+                        <td className="py-3.5 pr-5">
+                          <BotaoExcluirAbastecimento id={a.id} />
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -327,7 +326,7 @@ export default async function VeiculoDetalhePage({
                   <td className="py-3.5 pr-5">{estatisticas.totalLitros.toFixed(1)} L</td>
                   <td className="py-3.5 pr-5" />
                   <td className="py-3.5 pr-5">{formatarMoeda(estatisticas.totalValorGasto)}</td>
-                  <td className="py-3.5 pr-5" colSpan={2} />
+                  <td className="py-3.5 pr-5" colSpan={podeEditar ? 3 : 2} />
                 </tr>
               </tfoot>
             </table>

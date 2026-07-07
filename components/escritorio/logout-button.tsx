@@ -2,11 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { usePinProtegido } from "./pin-context";
 
 export default function LogoutButton() {
   const router = useRouter();
+  const { bloquear } = usePinProtegido();
 
   async function handleLogout() {
+    bloquear();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
