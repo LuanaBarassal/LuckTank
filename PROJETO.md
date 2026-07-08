@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-08 (identidade visual nos e-mails — alerta crítico, convite e redefinir senha).
+Última atualização: 2026-07-08 (retry automático no OCR do Gemini — instabilidade dia a dia investigada).
 
 ## Visão do produto
 
@@ -2237,6 +2237,63 @@ ficarem "bonitos e bem estruturados".
 
 **Verificado**: `tsc --noEmit`, `eslint` e `npm test` (106/106) limpos;
 `npm run build` limpo. Nenhuma migration nova.
+
+## Instabilidade do OCR investigada + retry automático (2026-07-08)
+
+Usuária relatou: uma foto de comprovante funcionou perfeitamente ontem
+(depois da melhoria de prompt/schema de 2026-07-07), e hoje a MESMA imagem
+não é lida — sem mudança nenhuma de código entre as duas tentativas.
+
+**Diagnóstico (scripts diretos contra a API real do Gemini, sem passar
+pelo app)**:
+- `GET /v1beta/models` e `/v1beta/models/gemini-flash-latest` confirmam que
+  o alias segue existindo e respondendo (200) — não é o mesmo tipo de
+  quebra por descontinuação já visto na Fase 4.
+- **Achado real**: o modelo por trás do alias hoje faz **"thinking"**
+  (raciocínio interno) antes de responder — confirmado via
+  `usageMetadata.thoughtsTokenCount > 0` numa chamada de teste. Isso é
+  novo (o Google atualiza o que "latest" aponta sem aviso) e introduz
+  variação genuína de resultado entre chamadas com a MESMA imagem, mesmo
+  prompt, mesma `temperature: 0.1` — explica o "funcionou ontem, não
+  funciona hoje" sem precisar de nenhuma mudança de dado ou de código.
+- **Testado desligar thinking** via `thinkingConfig: { thinkingBudget: 0 }`
+  (não documentado no SDK `@google/generative-ai` usado — TS não tipa esse
+  campo, mas a API aceita o objeto extra): **piorou**. Numa imagem sem
+  nenhum dado de verdade, com thinking ligado o modelo respondeu
+  corretamente `null`/`null`; com thinking desligado, o modelo **alucinou**
+  valores plausíveis (`30.0` litros, `R$170,70`) em vez de reconhecer que
+  não havia nada pra ler. Decisão: **não desligar thinking** — trocaria
+  "falha visível" por "erro silencioso mais perigoso" (dado inventado que
+  parece real), pior ainda num produto anti-fraude.
+- **Causa raiz aceita**: não-determinismo do próprio provedor (fora do
+  controle do LuckTank), não um bug de código nem um limite de cota
+  (nenhum 429/erro de rate limit apareceu em nenhum teste).
+
+**Correção aplicada**: `lib/ocr/gemini-provider.ts` reestruturado — a
+lógica de uma chamada virou `tentarExtrairUmaVez()` (privada), e
+`geminiOcrProvider.extrair()` (a função pública, interface inalterada)
+agora tenta a MESMA foto até 2 vezes antes de devolver "falhou" pro
+cliente — sem pedir nova captura ao motorista (isso já existe separado, no
+client, até 2 tentativas *com foto nova*; este retry é só a nível de
+chamada ao Gemini, transparente pro fluxo). Loga quando o sucesso só veio
+na 2ª tentativa, pra dar visibilidade futura (Vercel logs) de quão comum
+é essa variação na prática.
+
+**Validado**: `tsc --noEmit`, `eslint` e `npm test` (106/106, sem teste
+novo — `gemini-provider.ts` nunca teve cobertura unitária, é validado
+contra a API real como sempre foi) limpos; `npm run build` limpo. Testado
+de ponta a ponta contra o endpoint real (`POST /api/ocr`, veículo
+descartável criado/removido só pra isso): confirmado que a chamada demorou
+~8,7s (compatível com 2 tentativas reais ao Gemini, não 1) e devolveu o
+resultado esperado sem nenhum erro no log do servidor.
+
+**Não resolvido/fora de escopo**: não há como fixar o modelo numa versão
+exata sem reintroduzir o risco já documentado (nome de versão fixo quebra
+quando descontinuado — Fase 4). O retry é uma mitigação, não elimina o
+não-determinismo do provedor; se a taxa de falha real (medida pelos logs
+"só teve sucesso na tentativa 2") for alta demais no uso real, o próximo
+passo seria considerar `@google/genai` (SDK novo, dá controle mais fino) —
+troca de dependência maior, não feita agora.
 
 ## Regras invariantes (não podem quebrar)
 

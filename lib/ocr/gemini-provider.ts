@@ -68,42 +68,82 @@ function calcularConfianca(dados: DadosExtraidos): OcrConfianca {
   return "baixa";
 }
 
+// Quantas vezes tenta a MESMA foto antes de desistir e devolver "falhou"
+// pro client. Motivo (achado 2026-07-08, investigando relato de "a mesma
+// imagem funcionou ontem e hoje não"): o modelo por trás do alias
+// "gemini-flash-latest" hoje faz "thinking" (raciocínio interno) antes de
+// responder — confirmado via `usageMetadata.thoughtsTokenCount > 0` num
+// teste direto contra a API. Isso introduz variação real entre chamadas
+// (mesma imagem, mesmo prompt, mesma temperatura 0.1, resultado pode
+// divergir de uma vez pra outra) — não é um bug de código, é
+// não-determinismo do provedor. Testei desligar via `thinkingConfig:
+// {thinkingBudget: 0}` e piorou (o modelo "alucinou" valores plausíveis em
+// vez de reconhecer campo vazio), então a correção não é desligar
+// thinking — é não depender de uma ÚNICA tentativa. Tentar de novo no
+// servidor (mesma foto, sem pedir nova captura) é a mitigação mais segura:
+// mais barato que reduzir confiabilidade desligando um recurso do modelo,
+// e transparente pro motorista (só muda o tempo de espera na falha, não o
+// fluxo).
+const MAXIMO_TENTATIVAS_GEMINI = 2;
+
+async function tentarExtrairUmaVez(buffer: Buffer, mimeType: string): Promise<OcrResultado> {
+  try {
+    // Temperatura baixa: isto é extração determinística de dado que já
+    // está na imagem, não geração criativa — sampling mais "quente" (o
+    // default do modelo) só aumenta a chance de "chutar" um dígito em
+    // texto ambíguo. `responseSchema` garante o tipo de cada campo.
+    const model = getGeminiFlashModel({
+      responseMimeType: "application/json",
+      responseSchema: RESPONSE_SCHEMA,
+      temperature: 0.1,
+    });
+
+    const resposta = await model.generateContent([
+      PROMPT,
+      { inlineData: { data: buffer.toString("base64"), mimeType } },
+    ]);
+
+    const bruto = extrairJson(resposta.response.text());
+    const parsed = dadosExtraidosSchema.safeParse(bruto);
+
+    if (!parsed.success) {
+      return { sucesso: false, confianca: "falhou", dados: null, bruto, versaoPrompt: VERSAO };
+    }
+
+    const confianca = calcularConfianca(parsed.data);
+    return {
+      sucesso: confianca !== "falhou",
+      confianca,
+      dados: parsed.data,
+      bruto,
+      versaoPrompt: VERSAO,
+    };
+  } catch (erro) {
+    console.error("Falha no OCR do Gemini:", erro);
+    return { sucesso: false, confianca: "falhou", dados: null, bruto: null, versaoPrompt: VERSAO };
+  }
+}
+
 export const geminiOcrProvider: OcrProvider = {
   async extrair({ buffer, mimeType }): Promise<OcrResultado> {
-    try {
-      // Temperatura baixa: isto é extração determinística de dado que já
-      // está na imagem, não geração criativa — sampling mais "quente" (o
-      // default do modelo) só aumenta a chance de "chutar" um dígito em
-      // texto ambíguo. `responseSchema` garante o tipo de cada campo.
-      const model = getGeminiFlashModel({
-        responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
-        temperature: 0.1,
-      });
+    let ultimoResultado: OcrResultado = {
+      sucesso: false,
+      confianca: "falhou",
+      dados: null,
+      bruto: null,
+      versaoPrompt: VERSAO,
+    };
 
-      const resposta = await model.generateContent([
-        PROMPT,
-        { inlineData: { data: buffer.toString("base64"), mimeType } },
-      ]);
-
-      const bruto = extrairJson(resposta.response.text());
-      const parsed = dadosExtraidosSchema.safeParse(bruto);
-
-      if (!parsed.success) {
-        return { sucesso: false, confianca: "falhou", dados: null, bruto, versaoPrompt: VERSAO };
+    for (let tentativa = 1; tentativa <= MAXIMO_TENTATIVAS_GEMINI; tentativa++) {
+      ultimoResultado = await tentarExtrairUmaVez(buffer, mimeType);
+      if (ultimoResultado.sucesso) {
+        if (tentativa > 1) {
+          console.log(`OCR do Gemini só teve sucesso na tentativa ${tentativa}/${MAXIMO_TENTATIVAS_GEMINI}.`);
+        }
+        return ultimoResultado;
       }
-
-      const confianca = calcularConfianca(parsed.data);
-      return {
-        sucesso: confianca !== "falhou",
-        confianca,
-        dados: parsed.data,
-        bruto,
-        versaoPrompt: VERSAO,
-      };
-    } catch (erro) {
-      console.error("Falha no OCR do Gemini:", erro);
-      return { sucesso: false, confianca: "falhou", dados: null, bruto: null, versaoPrompt: VERSAO };
     }
+
+    return ultimoResultado;
   },
 };
