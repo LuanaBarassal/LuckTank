@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-08 (redesign da landing page + planos por periodicidade + correção do CTA de login).
+Última atualização: 2026-07-08 (Resend configurado + notificação por e-mail de alerta crítico implementada).
 
 ## Visão do produto
 
@@ -1999,6 +1999,200 @@ todos renderizando como esperado, sem quebra de layout. Único item no
 console foi o erro de CSP/`eval()` do Fast Refresh do modo dev, já
 documentado como falso-positivo (só existe em `next dev`, não em produção —
 ver "Auditoria adversarial de segurança").
+
+## Login sem acesso + convite falhando + suspender/excluir conta (2026-07-08)
+
+Sessão de suporte urgente: usuária relatou não conseguir logar com o e-mail
+de dono do sistema, convite de empresa nova falhando ("Não foi possível
+enviar o convite"), veículo não sendo cadastrado, e ausência total de um
+jeito de suspender/excluir acesso de cliente.
+
+- ✅ **Login com "senha incorreta" — causa raiz encontrada.** Diagnóstico
+  (script read-only contra o Supabase real, sem mexer em nada) confirmou que
+  as duas contas de dono do sistema (`luanabarassal123@gmail.com`,
+  `luckfrotas@gmail.com`) **existem e estão confirmadas**, ambas concluíram
+  o cadastro de senha em 2026-07-06 e nunca fizeram login de novo depois
+  disso — ou seja, não é conta ausente nem convite não recebido, só senha
+  esquecida. Não existe fluxo de "esqueci minha senha" na UI do LuckTank
+  ainda (só o link de convite inicial) — resolvido dessa vez disparando
+  manualmente `supabase.auth.resetPasswordForEmail()` pras duas contas
+  (mesmo mecanismo/página `/definir-senha` já usada pro convite, só que com
+  link de recuperação). **Considerar adicionar um link "Esqueci minha
+  senha" de verdade em `/login`** se isso se repetir — não implementado
+  ainda porque não foi pedido nesta sessão.
+- ✅ **"Não foi possível enviar o convite" — causa raiz encontrada e é
+  infraestrutura, não bug de código.** Reproduzido direto (convite de teste
+  pra um e-mail descartável): Supabase devolveu **429 "email rate limit
+  exceeded"**. O provedor de e-mail padrão do Supabase (sem SMTP próprio
+  configurado) tem uma cota MUITO baixa (poucas mensagens por hora) — os 2
+  e-mails de recuperação de senha enviados minutos antes (item acima) muito
+  provavelmente já tinham consumido essa cota, explicando por que a criação
+  de empresa nova falhou logo em seguida. **Ação recomendada pra não se
+  repetir**: configurar um provedor de SMTP próprio no Supabase (Project
+  Settings → Authentication → SMTP Settings) — Resend já tinha sido cotado
+  antes (ver "Notificação por e-mail de alerta crítico — adiada") e resolve
+  os dois casos de uma vez (esse rate limit E o e-mail de alerta crítico
+  que ficou pendente). **Sem isso configurado, qualquer sequência de vários
+  convites/recuperações de senha em pouco tempo vai voltar a esbarrar nessa
+  cota.** Nenhum código foi alterado pra esse item — é configuração de
+  infraestrutura, fora do escopo de uma mudança de código.
+- ✅ **Suspender/reativar/excluir usuário — feature nova em
+  `/admin-sistema`.** Não existia NENHUM jeito de cortar acesso de um
+  cliente que parasse de pagar, nem de apagar uma conta — só cadastrar.
+  Implementado em `admin-sistema/actions.ts` + novo componente
+  `components/escritorio/usuarios-empresa-lista.tsx`:
+  - `suspenderUsuario(usuarioId, suspender)` — usa o banimento nativo do
+    Supabase Auth (`ban_duration: "87600h"` pra suspender, `"none"` pra
+    reativar). Bloqueia login/renovação de sessão em nível de autenticação,
+    **reversível a qualquer momento**, não toca em nenhum dado. Uma sessão
+    já aberta no navegador pode demorar até ~1h pra cair de vez (tempo de
+    expiração do access token atual) — login NOVO é bloqueado na hora.
+  - `suspenderEmpresa(empresaId, suspender)` — mesma coisa, mas pra todos
+    os usuários de uma empresa de uma vez (o caso mais comum: "esse cliente
+    parou de pagar, corta tudo").
+  - `excluirUsuario(usuarioId)` — exclusão de verdade (`auth.admin.deleteUser`,
+    que cascade-deleta a linha em `usuarios` via a FK já existente desde a
+    0001). **Achado importante durante a validação**: `edicoes_log.usuario_id`,
+    `alertas.resolvido_por` e `abastecimentos.editado_por/excluido_por`
+    referenciam `usuarios(id)` sem `on delete cascade`/`set null` — ou
+    seja, o Postgres BLOQUEIA a exclusão de um usuário que já editou/excluiu
+    algo ou resolveu um alerta (protegendo o invariante #4, trilha de
+    auditoria não pode sumir). **Testado ao vivo que o erro que o Supabase
+    devolve nesse caso vem VAZIO** (`{}`, sem `message` nenhuma) — a
+    primeira versão do código tentava detectar isso lendo o texto do erro
+    (`.includes("foreign key")`) e NUNCA funcionaria. Corrigido: a função
+    agora consulta as 3 tabelas ANTES de tentar excluir e devolve uma
+    mensagem clara ("use Suspender em vez de excluir") sem nem chamar
+    `deleteUser` se encontrar qualquer rastro — reconfirmado com um teste
+    isolado depois da correção.
+  - UI: cada empresa em `/admin-sistema` agora lista seus usuários (nome,
+    e-mail, papel, badge Ativo/Suspenso) com botões "Suspender/Reativar
+    acesso" e "Excluir conta" por pessoa, mais dois botões em lote no rodapé
+    do card ("Suspender/Reativar todos os acessos desta empresa"). Status
+    de banimento vem de uma única chamada `admin.auth.admin.listUsers()`
+    (não 1 chamada por usuário) cruzada por id com a lista de `usuarios`.
+  - **Validado inteiramente por script isolado** contra empresa/usuários
+    descartáveis (criados e removidos por completo ao final, confirmado por
+    query independente que não sobrou nada): suspender bloqueia login
+    (`"User is banned"`), reativar libera de novo, excluir funciona pra
+    usuário sem histórico (cascade confirmado — linha em `usuarios` some
+    junto), excluir é corretamente recusado pra usuário com uma linha em
+    `edicoes_log` (e a mensagem de erro específica é a que aparece, não a
+    genérica). **Não testado clicando de verdade na UI do navegador** —
+    a sessão real da conta de demonstração já ativa no Chrome da usuária
+    (fora do controle desta automação) atrapalhou o teste visual; a lógica
+    do servidor foi validada 100% por fora, e a UI passou por
+    `tsc`/`eslint`/`build` limpos.
+  - **Decisão consciente**: não existe (ainda) exclusão de EMPRESA inteira
+    (só de usuário individual) — dropar uma empresa cascade-apagaria todo o
+    histórico de abastecimentos/alertas dela, o que contradiz o valor
+    central do produto (trilha de auditoria). Suspender a empresa inteira
+    (via `suspenderEmpresa`) cobre o caso de uso real ("cliente parou de
+    pagar") sem esse risco. Ver "Cascade delete amplo a partir de empresas"
+    na auditoria de 2026-07-07 — mesma decisão, reafirmada aqui.
+- ⏸️ **Veículo não cadastrado — não reproduzido ainda.** Usuária reportou
+  que tentou adicionar um veículo e "não apareceu erro nenhum, só não
+  salvou" — não foi possível confirmar a causa por leitura de código (schema
+  de validação revisado, nada suspeito). Hipótese mais provável: ela pode
+  ter tentado durante a mesma janela em que o login/acesso ao
+  `/admin-sistema` também estava com problema (mesma sessão de suporte),
+  então o formulário pode nem ter chegado a renderizar de verdade. **Pedir
+  pra ela tentar de novo** depois de resolver o login — se persistir,
+  precisa do erro exato (ou dos logs do Vercel na hora da tentativa) pra
+  diagnosticar.
+
+**Verificado**: `tsc --noEmit`, `eslint` e `npm test` (101/101) limpos depois
+da correção da checagem de FK; `npm run build` limpo (rota `/admin-sistema`
+subiu de 5,21 kB pra 6,06 kB de bundle da página). Nenhuma migration nova —
+tudo em cima do schema/Auth já existentes.
+
+## Resend configurado + notificação por e-mail de alerta crítico (2026-07-08)
+
+Continuação direta da sessão anterior ("Login sem acesso + convite falhando
++ suspender/excluir conta") — resolve a causa raiz do rate limit de e-mail
+e implementa o item que tinha ficado adiado em 2026-07-07.
+
+- ✅ **Domínio e conta do Resend configurados pela usuária.** Domínio
+  usado: `luckfrotas.com.br` (raiz, não um subdomínio — o plano grátis do
+  Resend só permite 1 domínio verificado por conta, e ela já tinha esse
+  domínio verificado ali de antes por causa do LuckFrota; um subdomínio
+  novo pediria upgrade pago, então a decisão foi usar o domínio raiz
+  direto). `RESEND_API_KEY` adicionada ao `.env.local` (e precisa ser
+  adicionada também nas env vars do Vercel em produção — **confirmar que
+  isso foi feito**, não foi validado nesta sessão se já está lá).
+  **Validado com envio real**: e-mail de teste via API do Resend direto
+  (sem passar pelo Supabase) entregue com sucesso; convite real do
+  Supabase (`inviteUserByEmail`) também funcionou sem cair no erro de rate
+  limit de antes — confirma que o Custom SMTP do Supabase (configurado
+  pela usuária em Authentication → Emails → SMTP Settings, host
+  `smtp.resend.com`, porta 587, usuário `resend`, senha = chave da API)
+  está de fato ativo e roteando pelo Resend.
+- ✅ **Notificação por e-mail de alerta crítico — implementada.** Módulo
+  novo `lib/email/`:
+  - `cliente.ts` (`server-only`): `enviarEmail()`, POST direto pra API do
+    Resend via `fetch` (sem SDK novo — é uma chamada só, mesmo espírito de
+    `lib/gemini/client.ts`/`lib/rate-limit.ts` de usar a API do provedor
+    direto). Remetente fixo `LuckTank <naoresponda@luckfrotas.com.br>`.
+  - `conteudo-alerta.ts`: função PURA `montarEmailAlertaCritico()` (monta
+    assunto/HTML a partir de dado já resolvido, sem I/O) — mesmo padrão de
+    `lib/validacao/regras.ts`, testável isoladamente. Reaproveita
+    `ROTULO_REGRA` (`lib/validacao/rotulos.ts`, já existente) pra traduzir
+    o `tipo_regra` técnico pro texto legível que já aparece no painel de
+    Alertas — nunca duplicou o mapeamento. 5 testes
+    (`conteudo-alerta.test.ts`): singular/plural no assunto, tradução do
+    rótulo, fallback pro código bruto quando não há rótulo mapeado, link do
+    painel presente.
+  - `notificar-alerta-critico.ts`: orquestra de verdade — busca todos os
+    `usuarios` com `papel = 'administrador'` da empresa (service role),
+    monta o e-mail e chama `enviarEmail()`. **Nunca lança** (try/catch
+    interno, `console.error` em falha) — mesmo invariante #7 do motor de
+    alertas ("nunca bloqueiam"): se o Resend cair, a `RESEND_API_KEY`
+    sumir, ou a empresa não tiver nenhum administrador cadastrado, o
+    abastecimento e o alerta já foram gravados antes desta função ser
+    chamada, então uma falha aqui é só um e-mail a menos, nunca um dado
+    perdido.
+  - **Só dispara pra alertas nível `critico`** — info/atenção continuam só
+    no painel (mesmo corte de "não incomodar à toa" já usado nas cores do
+    painel de Alertas). Um e-mail só, mesmo se vários alertas críticos
+    dispararem juntos no mesmo abastecimento (assunto já muda pra plural
+    nesse caso).
+  - `app/api/abastecimentos/route.ts`: a query de veículo ganhou
+    `placa, prefixo` (precisava disso pra identificar o veículo no e-mail,
+    via `formatarVeiculo()` já existente); `avaliarEGravarAlertas` chama
+    `notificarAlertaCritico()` logo depois do insert dos alertas, filtrando
+    só os de nível crítico.
+  - **URL do painel de alertas fixa** (`https://luck-tank.vercel.app/alertas`)
+    de propósito — diferente do `redirectTo` de convite (que usa
+    `lib/url-atual.ts`, dinâmico por request), este e-mail não tem
+    "request" nenhum de onde derivar o host (dispara a partir do fluxo do
+    motorista, que não tem esse contexto de origem fazendo sentido usar) e
+    o LuckTank só tem um deploy real.
+  - **Achado durante a implementação**: o `@/` (alias do TypeScript/Next)
+    não é resolvido pelo Vitest neste projeto (não há `vitest.config.ts`
+    nem plugin de tsconfig-paths) — nenhum outro módulo *testado* até hoje
+    importava outro módulo de `lib/` usando esse alias, então isso nunca
+    tinha aparecido. `conteudo-alerta.ts` importa `rotulos.ts` por caminho
+    relativo (`../validacao/rotulos`) por causa disso — se um teste novo
+    algum dia precisar de um import cruzado entre pastas de `lib/`, usar
+    caminho relativo, não `@/`.
+  - **Validado ponta a ponta de verdade**: empresa + administrador + veículo
+    descartáveis criados só pra este teste (removidos por completo depois,
+    confirmado por query independente); abastecimento real enviado via
+    `POST /api/abastecimentos` (o mesmo endpoint que o motorista usa) com
+    litros acima da capacidade do tanque — alerta crítico
+    (`litros_acima_capacidade_tanque`) confirmado gravado no banco, log do
+    servidor sem nenhum erro de envio de e-mail (silêncio = sucesso, já que
+    a função só loga em caso de falha), e-mail de teste anterior já
+    confirmado recebido pela usuária na mesma caixa de entrada usada nesse
+    cenário.
+- **Não incluído nesta rodada**: nenhuma notificação pra alertas
+  info/atenção (decisão deliberada, mesmo corte de sempre); nenhuma
+  configuração de preferência (usuária não pode desligar/religar esse
+  e-mail ainda) — se isso incomodar no uso real, é fácil adicionar um
+  toggle depois.
+
+**Verificado**: `tsc --noEmit`, `eslint` e `npm test` (106/106 — 5 novos)
+limpos; `npm run build` limpo. Nenhuma migration nova.
 
 ## Regras invariantes (não podem quebrar)
 

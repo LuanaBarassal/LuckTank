@@ -10,6 +10,8 @@ import {
 import { validarFoto } from "@/lib/validacao/arquivo";
 import { extrairExifFoto } from "@/lib/exif";
 import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
+import { notificarAlertaCritico } from "@/lib/email/notificar-alerta-critico";
+import { formatarVeiculo } from "@/lib/formatacao";
 import type { Json } from "@/types/database";
 
 // `undefined` (não `null`) pra casar com `.optional()` nos schemas —
@@ -78,7 +80,9 @@ export async function POST(request: NextRequest) {
 
   const { data: veiculo } = await admin
     .from("veiculos")
-    .select("id, empresa_id, km_atual, ativo, capacidade_tanque_litros, consumo_referencia_kml")
+    .select(
+      "id, empresa_id, km_atual, ativo, capacidade_tanque_litros, consumo_referencia_kml, placa, prefixo"
+    )
     .eq("qr_token", qrToken)
     .single();
 
@@ -304,6 +308,8 @@ async function avaliarEGravarAlertas(params: {
     empresa_id: string;
     capacidade_tanque_litros: number | null;
     consumo_referencia_kml: number | null;
+    placa: string;
+    prefixo: string | null;
   };
   abastecimento: {
     id: string;
@@ -404,4 +410,17 @@ async function avaliarEGravarAlertas(params: {
       detalhes: alerta.detalhes as Json,
     }))
   );
+
+  // E-mail é só pros críticos — info/atenção continuam só no painel
+  // (mesmo corte de "não incomodar à toa" já usado nas cores do painel de
+  // Alertas). Roda depois do insert acima: o alerta já existe no banco
+  // mesmo que o e-mail falhe (notificarAlertaCritico nunca lança).
+  const tiposRegraCriticos = alertas.filter((a) => a.nivel === "critico").map((a) => a.tipoRegra);
+  if (tiposRegraCriticos.length > 0) {
+    await notificarAlertaCritico({
+      empresaId: veiculo.empresa_id,
+      veiculoLabel: formatarVeiculo(veiculo.prefixo, veiculo.placa),
+      tiposRegraCriticos,
+    });
+  }
 }

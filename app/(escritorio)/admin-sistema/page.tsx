@@ -8,6 +8,9 @@ import ConvidarUsuarioEmpresaForm from "@/components/escritorio/convidar-usuario
 import CriarVeiculoEmpresaForm from "@/components/escritorio/criar-veiculo-empresa-form";
 import CriarVeiculosLoteForm from "@/components/escritorio/criar-veiculos-lote-form";
 import RenovacaoEmpresaEditor from "@/components/escritorio/renovacao-empresa-editor";
+import UsuariosEmpresaLista, {
+  type UsuarioEmpresaLinha,
+} from "@/components/escritorio/usuarios-empresa-lista";
 import { formatarDataBr } from "@/lib/formatacao";
 
 // Painel do dono do sistema — atravessa TODAS as empresas de propósito,
@@ -48,13 +51,22 @@ export default async function AdminSistemaPage() {
 
   const idsEmpresas = (empresas ?? []).map((e) => e.id);
 
-  const [{ data: usuariosBrutos }, { data: veiculosBrutos }] = await Promise.all([
+  const [{ data: usuariosBrutos }, { data: veiculosBrutos }, { data: authUsers }] = await Promise.all([
     idsEmpresas.length
-      ? admin.from("usuarios").select("empresa_id").in("empresa_id", idsEmpresas)
-      : Promise.resolve({ data: [] as { empresa_id: string }[] }),
+      ? admin
+          .from("usuarios")
+          .select("id, empresa_id, nome, email, papel")
+          .in("empresa_id", idsEmpresas)
+      : Promise.resolve({
+          data: [] as { id: string; empresa_id: string; nome: string; email: string; papel: string }[],
+        }),
     idsEmpresas.length
       ? admin.from("veiculos").select("empresa_id").in("empresa_id", idsEmpresas)
       : Promise.resolve({ data: [] as { empresa_id: string }[] }),
+    // Status de banimento (suspenso/ativo) vive no Supabase Auth, não em
+    // `usuarios` — busca todos de uma vez (em vez de 1 chamada por usuário)
+    // e cruza pelo id logo abaixo.
+    admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
 
   const contarPorEmpresa = (linhas: { empresa_id: string }[]) => {
@@ -63,8 +75,28 @@ export default async function AdminSistemaPage() {
     return mapa;
   };
 
-  const mapaUsuarios = contarPorEmpresa(usuariosBrutos ?? []);
   const mapaVeiculos = contarPorEmpresa(veiculosBrutos ?? []);
+
+  const mapaSuspenso = new Map<string, boolean>();
+  for (const authUser of authUsers?.users ?? []) {
+    mapaSuspenso.set(authUser.id, Boolean(authUser.banned_until && new Date(authUser.banned_until) > new Date()));
+  }
+
+  const usuariosPorEmpresa = new Map<string, UsuarioEmpresaLinha[]>();
+  for (const u of usuariosBrutos ?? []) {
+    const linha: UsuarioEmpresaLinha = {
+      id: u.id,
+      nome: u.nome,
+      email: u.email,
+      papel: u.papel,
+      suspenso: mapaSuspenso.get(u.id) ?? false,
+    };
+    const lista = usuariosPorEmpresa.get(u.empresa_id) ?? [];
+    lista.push(linha);
+    usuariosPorEmpresa.set(u.empresa_id, lista);
+  }
+
+  const mapaUsuarios = contarPorEmpresa(usuariosBrutos ?? []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -81,22 +113,22 @@ export default async function AdminSistemaPage() {
         <div className="flex flex-col gap-2 text-sm">
           {!empresas?.length && <p className="text-slate-400">Nenhuma empresa cadastrada ainda.</p>}
           {empresas?.map((e) => (
-            <div
-              key={e.id}
-              className="flex flex-col gap-1.5 border-b border-navy-800 py-2.5 last:border-0 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <div className="font-medium text-white">{e.nome}</div>
-                <div className="text-xs text-slate-500">
-                  Criada em {formatarDataBr(e.criado_em.slice(0, 10))}
+            <div key={e.id} className="flex flex-col gap-3 border-b border-navy-800 py-3 last:border-0">
+              <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-medium text-white">{e.nome}</div>
+                  <div className="text-xs text-slate-500">
+                    Criada em {formatarDataBr(e.criado_em.slice(0, 10))}
+                  </div>
+                </div>
+                <div className="flex flex-col items-start gap-1 sm:items-end">
+                  <div className="text-xs text-slate-400">
+                    {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
+                  </div>
+                  <RenovacaoEmpresaEditor empresaId={e.id} proximaRenovacao={e.proxima_renovacao} />
                 </div>
               </div>
-              <div className="flex flex-col items-start gap-1 sm:items-end">
-                <div className="text-xs text-slate-400">
-                  {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
-                </div>
-                <RenovacaoEmpresaEditor empresaId={e.id} proximaRenovacao={e.proxima_renovacao} />
-              </div>
+              <UsuariosEmpresaLista empresaId={e.id} usuarios={usuariosPorEmpresa.get(e.id) ?? []} />
             </div>
           ))}
         </div>

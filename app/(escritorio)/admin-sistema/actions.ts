@@ -225,6 +225,133 @@ export async function atualizarProximaRenovacao(
   return { data: true };
 }
 
+// Suspende ou reativa o ACESSO de um usuário (não apaga nada) — usa o
+// banimento nativo do Supabase Auth (`ban_duration`), que bloqueia login e
+// renovação de sessão em nível de autenticação, antes de qualquer RLS.
+// Preferível a excluir de verdade quando o objetivo é só "cliente parou de
+// pagar, corta o acesso": reversível a qualquer momento, não perde nenhum
+// dado nem quebra `edicoes_log`/`alertas` que referenciam esse usuário (ver
+// excluirUsuario abaixo pra entender por que exclusão de verdade é mais
+// arriscada). Uma sessão já aberta no navegador pode levar até ~1h pra ser
+// cortada de fato (tempo de expiração do access token atual) — o bloqueio
+// de LOGIN NOVO é imediato.
+export async function suspenderUsuario(
+  usuarioId: string,
+  suspender: boolean
+): Promise<Resultado<true>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode suspender ou reativar acesso." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(usuarioId, {
+    ban_duration: suspender ? "87600h" : "none",
+  });
+
+  if (error) return { error: "Não foi possível atualizar o acesso." };
+
+  revalidatePath("/admin-sistema");
+  return { data: true };
+}
+
+// Suspende/reativa TODOS os usuários de uma empresa de uma vez — cobre o
+// caso mais comum na prática ("esse cliente parou de pagar, corta tudo"),
+// sem precisar clicar usuário por usuário.
+export async function suspenderEmpresa(
+  empresaId: string,
+  suspender: boolean
+): Promise<Resultado<{ afetados: number }>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode suspender ou reativar acesso." };
+  }
+
+  const admin = createAdminClient();
+  const { data: usuarios, error: erroBusca } = await admin
+    .from("usuarios")
+    .select("id")
+    .eq("empresa_id", empresaId);
+
+  if (erroBusca) return { error: "Não foi possível buscar os usuários da empresa." };
+
+  let afetados = 0;
+  for (const usuario of usuarios ?? []) {
+    const { error } = await admin.auth.admin.updateUserById(usuario.id, {
+      ban_duration: suspender ? "87600h" : "none",
+    });
+    if (!error) afetados++;
+  }
+
+  revalidatePath("/admin-sistema");
+  return { data: { afetados } };
+}
+
+// Exclusão DE VERDADE do login de um usuário (não é soft-delete). Diferente
+// do resto do app (abastecimento é soft-delete, status='excluido'), aqui
+// apagamos o usuário do Supabase Auth mesmo — `usuarios.id` referencia
+// `auth.users(id) on delete cascade` (0001_init.sql), então a linha em
+// `usuarios` some junto automaticamente.
+//
+// RISCO REAL que motivou a checagem abaixo: `edicoes_log.usuario_id`,
+// `abastecimentos.editado_por/excluido_por` e `alertas.resolvido_por`
+// referenciam `usuarios(id)` SEM "on delete cascade" nem "set null" — ou
+// seja, se esse usuário já editou/excluiu algo ou resolveu um alerta
+// alguma vez, o Postgres BLOQUEIA a exclusão (viola FK), de propósito:
+// isso é o invariante #4 do produto (trilha de auditoria não pode
+// desaparecer) protegendo até de mim.
+//
+// Testado ao vivo (script isolado, empresa/usuários descartáveis) que o
+// erro que o Supabase devolve quando a exclusão é barrada por essa FK vem
+// **vazio** (`{}`, sem `message` nenhuma) — não dá pra confiar em nenhum
+// texto de erro pra detectar esse caso. Por isso a checagem é feita ANTES
+// de tentar excluir (consulta direta nas 3 tabelas), não depois: se
+// encontrar qualquer rastro, nem chega a chamar `deleteUser`.
+export async function excluirUsuario(usuarioId: string): Promise<Resultado<true>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode excluir contas." };
+  }
+
+  const admin = createAdminClient();
+
+  const [{ data: logs }, { data: alertasResolvidos }, { data: abastecimentosEditados }] =
+    await Promise.all([
+      admin.from("edicoes_log").select("id").eq("usuario_id", usuarioId).limit(1),
+      admin.from("alertas").select("id").eq("resolvido_por", usuarioId).limit(1),
+      admin
+        .from("abastecimentos")
+        .select("id")
+        .or(`editado_por.eq.${usuarioId},excluido_por.eq.${usuarioId}`)
+        .limit(1),
+    ]);
+
+  if (logs?.length || alertasResolvidos?.length || abastecimentosEditados?.length) {
+    return {
+      error:
+        'Esse usuário já editou/excluiu algo ou resolveu um alerta — excluir apagaria rastro de auditoria. Use "Suspender" em vez de excluir.',
+    };
+  }
+
+  const { error } = await admin.auth.admin.deleteUser(usuarioId);
+  if (error) return { error: "Não foi possível excluir esse usuário." };
+
+  revalidatePath("/admin-sistema");
+  return { data: true };
+}
+
 export interface ErroLinhaLote {
   linha: number;
   texto: string;
