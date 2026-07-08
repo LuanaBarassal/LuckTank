@@ -1809,6 +1809,23 @@ minúsculo) validada isoladamente com `node -e` fora do navegador.
 credencial de dono do sistema disponível nesta sessão pra testar contra
 o banco real.
 
+## Notificação por e-mail de alerta crítico — adiada (2026-07-07)
+
+Considerada, não implementada. Hoje um alerta crítico só aparece se
+alguém entrar em `/alertas` — sem notificação nenhuma, uma fraude pode
+ficar dias sem ninguém perceber mesmo já detectada. Ficou de fora desta
+rodada por decisão do usuário ("vamos pular isso"), não por limitação
+técnica.
+
+Contexto pra retomar depois: exigiria um serviço de e-mail transacional
+(cotado Resend, camada grátis de 3.000 e-mails/mês). Pra mandar direto
+pro administrador de cada empresa cliente (em vez de só pra
+`luckfrotas@gmail.com`), precisa verificar um domínio de verdade no
+Resend — o usuário tem `luckfrotas.com.br` disponível pra isso, mas a
+verificação (adicionar registros DNS onde o domínio foi registrado) não
+foi concluída nesta sessão. Nenhuma conta foi criada, nenhuma env var
+foi adicionada, nenhum código foi escrito.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
