@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-08 (Resend configurado + notificação por e-mail de alerta crítico implementada).
+Última atualização: 2026-07-08 (identidade visual nos e-mails — alerta crítico, convite e redefinir senha).
 
 ## Visão do produto
 
@@ -2193,6 +2193,50 @@ e implementa o item que tinha ficado adiado em 2026-07-07.
 
 **Verificado**: `tsc --noEmit`, `eslint` e `npm test` (106/106 — 5 novos)
 limpos; `npm run build` limpo. Nenhuma migration nova.
+
+## Identidade visual nos e-mails (2026-07-08)
+
+Pedido do usuário: os e-mails do sistema (alerta crítico, convite, redefinir
+senha) estavam em texto simples, sem nenhuma cor/identidade — pediu pra
+ficarem "bonitos e bem estruturados".
+
+- ✅ **`lib/email/envelope.ts`** (novo): envelope visual compartilhado —
+  `envolverEmail()` (cabeçalho navy `#0a1628` com o badge "LT", corpo
+  branco, rodapé) e `botaoEmail()` (botão ciano `#00bfe6`/texto navy, mesmo
+  par de cores do botão primário do app). HTML de e-mail de verdade —
+  tabela (`role="presentation"`), não flexbox/grid, e estilo inline em cada
+  elemento, porque é isso que webmails (Gmail, Outlook) realmente suportam;
+  `<style>` em bloco é removido por vários clientes.
+- ✅ **`lib/email/conteudo-alerta.ts`** atualizado pra usar o envelope — a
+  caixa de alertas críticos ganhou a mesma borda esquerda vermelha + fundo
+  levemente tingido que já existe no card de alerta crítico do painel real
+  (`components/escritorio/lista-alertas.tsx`), pra quem já usa o painel
+  reconhecer o mesmo peso visual no e-mail. Testes existentes
+  (`conteudo-alerta.test.ts`) continuam batendo sem alteração (checam
+  substring, não o HTML inteiro).
+- ✅ **Templates do Supabase Auth (convite e redefinir senha) — não são
+  código do LuckTank**, vivem dentro do painel do Supabase
+  (Authentication → Emails → Templates). Gerados com o MESMO envelope
+  (rodando `envolverEmail()`/`botaoEmail()` via script `tsx` descartável,
+  não escritos à mão — garante que os 3 e-mails ficam pixel-idênticos no
+  cabeçalho/rodapé) e salvos em `supabase/email-templates/convite.html` e
+  `redefinir-senha.html` só como referência/backup dentro do repo (esses
+  arquivos não são lidos por nenhum código, é documentação de quando algo
+  precisar ser reconfigurado — ex.: projeto Supabase recriado do zero).
+  Variáveis Go template do Supabase (`{{ .ConfirmationURL }}`) preservadas
+  literalmente no HTML gerado. Assuntos (editados separadamente no painel,
+  não fazem parte do HTML): "Você foi convidado pro LuckTank" e "Redefinir
+  sua senha do LuckTank". **A usuária precisa colar isso manualmente no
+  painel do Supabase** — nenhuma API permite fazer isso por fora (não é
+  algo que dá pra automatizar com a service role key).
+- **Validado enviando de verdade** (via Resend, mesmo domínio
+  `luckfrotas.com.br` já configurado) os 3 e-mails pro e-mail de teste da
+  usuária — convite, redefinir senha e alerta crítico (2 alertas
+  combinados, pra conferir o assunto no plural) — confirmados recebidos e
+  com o visual esperado.
+
+**Verificado**: `tsc --noEmit`, `eslint` e `npm test` (106/106) limpos;
+`npm run build` limpo. Nenhuma migration nova.
 
 ## Regras invariantes (não podem quebrar)
 
