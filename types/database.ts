@@ -274,16 +274,19 @@ export type Database = {
           criado_em: string
           id: string
           nome: string
+          proxima_renovacao: string | null
         }
         Insert: {
           criado_em?: string
           id?: string
           nome: string
+          proxima_renovacao?: string | null
         }
         Update: {
           criado_em?: string
           id?: string
           nome?: string
+          proxima_renovacao?: string | null
         }
         Relationships: []
       }
@@ -620,15 +623,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-
-// Aliases de conveniência, adicionados por cima do arquivo gerado —
-// para regenerar, rode `npx supabase gen types typescript --linked` e cole
-// o resultado ACIMA desta seção, mantendo os aliases abaixo.
-export type EmpresaRow = Tables<"empresas">
-export type UsuarioRow = Tables<"usuarios">
-export type VeiculoRow = Tables<"veiculos">
-export type MotoristaRow = Tables<"motoristas">
-export type MidiaRow = Tables<"midias">
-export type AlertaRow = Tables<"alertas">
-export type AbastecimentoRow = Tables<"abastecimentos">
-export type EdicaoLogRow = Tables<"edicoes_log">

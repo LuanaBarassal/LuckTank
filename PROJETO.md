@@ -1905,6 +1905,40 @@ não-exploitável na prática, independente da versão.
 `npm run build` limpos. CSP testada ao vivo contra build de produção
 (`next start`), não só `next dev`.
 
+## Data de renovação por empresa + argumento de ROI na landing (2026-07-07)
+
+Dois itens de custo zero de uma análise de "o que mais falta pra vender
+por R$ 1.000/ano", escolhidos por serem os de menor esforço/maior efeito
+pro momento atual do negócio (poucos clientes, venda pessoal).
+
+**Data de renovação.** `empresas.proxima_renovacao` (migration 0015, date
+nullable — empresa nova não tem renovação marcada ainda). Editável inline
+em `/admin-sistema` (`RenovacaoEmpresaEditor`, `atualizarProximaRenovacao`
+em `admin-sistema/actions.ts`, gate `ehDonoSistema` igual ao resto da
+página) com badge de status calculado no client a partir da data (vencida
+/ vence em ≤30 dias / em dia) — mesmos tokens semânticos de cor
+(critico/atencao/sucesso) do resto do app. Só um lembrete visual pro dono
+do sistema; não bloqueia nada no acesso do cliente (cobrança continua
+manual, fora do sistema).
+
+**Argumento de ROI.** Seção nova em `app/page.tsx`, entre o mockup de
+alerta e "Como funciona": liga o exemplo de alerta já mostrado (nota
+duplicada) a um cálculo simples e honesto — 4 fraudes do tamanho de um
+abastecimento médio (~R$ 280) ao longo do ano já cobrem o valor da
+assinatura. Número redondo, não promessa de economia garantida.
+
+**Testado ao vivo** (build de produção, `next start`): landing carrega a
+seção de ROI corretamente; `/admin-sistema` com elevação temporária de
+`DONO_SISTEMA_EMAILS` (revertida logo depois, mesmo padrão de sempre)
+confirmou os 3 estados do badge (vencida, vence em breve, em dia) e o
+fluxo de editar/salvar/cancelar. Dados de teste (`proxima_renovacao` nas
+empresas de demonstração) limpos via script depois do teste.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. Migration aplicada em produção via
+`supabase db push --linked`; `types/database.ts` regerado via
+`supabase gen types typescript --linked`.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

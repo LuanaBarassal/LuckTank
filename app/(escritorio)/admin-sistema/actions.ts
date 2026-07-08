@@ -192,6 +192,39 @@ export async function criarVeiculoParaEmpresa(
   return { data: { id: data.id } };
 }
 
+// Data de renovação é só um lembrete pro dono do sistema — não bloqueia
+// nada no app nem no acesso do cliente (a venda é manual, não existe
+// cobrança automática pra reagir a vencimento). `null` explícito limpa o
+// campo (empresa sem data marcada ainda).
+export async function atualizarProximaRenovacao(
+  empresaId: string,
+  data: string | null
+): Promise<Resultado<true>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode editar isso." };
+  }
+
+  if (data !== null && !/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+    return { error: "Data inválida." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("empresas")
+    .update({ proxima_renovacao: data })
+    .eq("id", empresaId);
+
+  if (error) return { error: "Não foi possível salvar a data." };
+
+  revalidatePath("/admin-sistema");
+  return { data: true };
+}
+
 export interface ErroLinhaLote {
   linha: number;
   texto: string;

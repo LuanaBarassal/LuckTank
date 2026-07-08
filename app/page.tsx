@@ -129,6 +129,23 @@ export default async function RootPage() {
         </div>
       </section>
 
+      {/* Argumento de ROI — número redondo, não promessa: liga direto ao
+          exemplo de alerta acima, pra mostrar que o valor da assinatura se
+          justifica sozinho com pouquíssimas fraudes detectadas por ano. */}
+      <section className="mx-auto max-w-5xl px-6 pb-16">
+        <div className="rounded-2xl border border-navy-800 bg-navy-900 p-6 md:p-8">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Por que isso se paga sozinho
+          </p>
+          <p className="max-w-2xl text-slate-300">
+            Um abastecimento médio de frota fica perto de R$ 280. Detectar só 4 fraudes desse
+            tamanho ao longo do ano — uma nota reaproveitada, uma foto repetida, um tanque que não
+            bate — já cobre o valor inteiro da assinatura. O sistema aponta isso sozinho, todo mês,
+            sem precisar de ninguém conferindo abastecimento por abastecimento.
+          </p>
+        </div>
+      </section>
+
       {/* Como funciona */}
       <section className="mx-auto max-w-5xl px-6 pb-16">
         <h2 className="mb-6 font-title text-2xl font-bold text-white">Como funciona</h2>

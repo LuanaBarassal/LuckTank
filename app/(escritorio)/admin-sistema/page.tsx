@@ -7,6 +7,7 @@ import CriarEmpresaForm from "@/components/escritorio/criar-empresa-form";
 import ConvidarUsuarioEmpresaForm from "@/components/escritorio/convidar-usuario-empresa-form";
 import CriarVeiculoEmpresaForm from "@/components/escritorio/criar-veiculo-empresa-form";
 import CriarVeiculosLoteForm from "@/components/escritorio/criar-veiculos-lote-form";
+import RenovacaoEmpresaEditor from "@/components/escritorio/renovacao-empresa-editor";
 import { formatarDataBr } from "@/lib/formatacao";
 
 // Painel do dono do sistema — atravessa TODAS as empresas de propósito,
@@ -42,7 +43,7 @@ export default async function AdminSistemaPage() {
 
   const { data: empresas } = await admin
     .from("empresas")
-    .select("id, nome, criado_em")
+    .select("id, nome, criado_em, proxima_renovacao")
     .order("criado_em", { ascending: false });
 
   const idsEmpresas = (empresas ?? []).map((e) => e.id);
@@ -82,7 +83,7 @@ export default async function AdminSistemaPage() {
           {empresas?.map((e) => (
             <div
               key={e.id}
-              className="flex items-center justify-between border-b border-navy-800 py-2 last:border-0"
+              className="flex flex-col gap-1.5 border-b border-navy-800 py-2.5 last:border-0 sm:flex-row sm:items-center sm:justify-between"
             >
               <div>
                 <div className="font-medium text-white">{e.nome}</div>
@@ -90,8 +91,11 @@ export default async function AdminSistemaPage() {
                   Criada em {formatarDataBr(e.criado_em.slice(0, 10))}
                 </div>
               </div>
-              <div className="text-xs text-slate-400">
-                {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
+              <div className="flex flex-col items-start gap-1 sm:items-end">
+                <div className="text-xs text-slate-400">
+                  {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
+                </div>
+                <RenovacaoEmpresaEditor empresaId={e.id} proximaRenovacao={e.proxima_renovacao} />
               </div>
             </div>
           ))}
