@@ -6,6 +6,7 @@ import { Card, CardTitle } from "@/components/ui/card";
 import CriarEmpresaForm from "@/components/escritorio/criar-empresa-form";
 import ConvidarUsuarioEmpresaForm from "@/components/escritorio/convidar-usuario-empresa-form";
 import CriarVeiculoEmpresaForm from "@/components/escritorio/criar-veiculo-empresa-form";
+import CriarVeiculosLoteForm from "@/components/escritorio/criar-veiculos-lote-form";
 import { formatarDataBr } from "@/lib/formatacao";
 
 // Painel do dono do sistema — atravessa TODAS as empresas de propósito,
@@ -119,6 +120,17 @@ export default async function AdminSistemaPage() {
           Cadastro de veículo também saiu de dentro da própria empresa, pelo mesmo motivo.
         </p>
         <CriarVeiculoEmpresaForm
+          empresas={(empresas ?? []).map((e) => ({ id: e.id, nome: e.nome }))}
+        />
+      </Card>
+
+      <Card variant="dark" className="max-w-lg">
+        <CardTitle variant="dark">Cadastrar vários veículos de uma vez</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Pra onboarding de cliente novo com frota grande — cola uma lista copiada de planilha em
+          vez de cadastrar um por um.
+        </p>
+        <CriarVeiculosLoteForm
           empresas={(empresas ?? []).map((e) => ({ id: e.id, nome: e.nome }))}
         />
       </Card>

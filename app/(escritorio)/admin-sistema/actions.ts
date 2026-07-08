@@ -191,3 +191,88 @@ export async function criarVeiculoParaEmpresa(
   revalidatePath("/admin-sistema");
   return { data: { id: data.id } };
 }
+
+export interface ErroLinhaLote {
+  linha: number;
+  texto: string;
+  motivo: string;
+}
+
+// Cadastro em lote — pensado pro próprio onboarding do dono do sistema:
+// cadastrar veículo virou trabalho manual repetitivo dele mesmo (ver
+// criarVeiculoParaEmpresa acima), então colar uma lista copiada de
+// planilha (uma linha por veículo, campos separados por TAB ou vírgula)
+// economiza o que hoje é o gargalo real do negócio — o tempo de quem
+// onboarda cada cliente novo. Só os campos que dá pra saber "de cabeça"
+// olhando uma frota (placa/prefixo/modelo/marca/ano) — capacidade de
+// tanque, tipo de combustível e consumo de referência ficam pro cadastro
+// individual depois (menos comum saber de cabeça, e a empresa cliente já
+// pode editar isso sozinha). Nunca falha tudo por causa de UMA linha
+// ruim — cada linha é validada e inserida separadamente, erro de uma não
+// derruba as outras (resultado parcial, não tudo-ou-nada).
+export async function criarVeiculosEmLote(
+  empresaId: string,
+  texto: string
+): Promise<Resultado<{ criados: number; erros: ErroLinhaLote[] }>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode cadastrar veículos." };
+  }
+
+  const admin = createAdminClient();
+  const { data: empresa } = await admin.from("empresas").select("id").eq("id", empresaId).single();
+  if (!empresa) return { error: "Empresa não encontrada." };
+
+  const linhas = texto
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  if (linhas.length === 0) {
+    return { error: "Cole ao menos uma linha (placa, prefixo, modelo, marca, ano)." };
+  }
+
+  const campo = (v: string | undefined) => (v && v.trim().length > 0 ? v.trim() : undefined);
+
+  let criados = 0;
+  const erros: ErroLinhaLote[] = [];
+
+  for (let i = 0; i < linhas.length; i++) {
+    const linha = linhas[i];
+    // TAB é o separador natural ao colar de uma planilha (Excel/Sheets);
+    // vírgula funciona pra quem digitar/colar texto simples.
+    const partes = linha.includes("\t") ? linha.split("\t") : linha.split(",");
+    const [placa, prefixo, modelo, marca, ano] = partes.map((p) => p?.trim());
+
+    const parsed = veiculoSchema.safeParse({
+      placa: campo(placa) ?? "",
+      prefixo: campo(prefixo),
+      modelo: campo(modelo),
+      marca: campo(marca),
+      ano: campo(ano),
+    });
+
+    if (!parsed.success) {
+      erros.push({ linha: i + 1, texto: linha, motivo: parsed.error.issues[0]?.message ?? "Dados inválidos." });
+      continue;
+    }
+
+    const { error } = await admin.from("veiculos").insert({ ...parsed.data, empresa_id: empresaId });
+    if (error) {
+      erros.push({
+        linha: i + 1,
+        texto: linha,
+        motivo: error.code === "23505" ? "Já existe um veículo com essa placa nesta empresa." : "Não foi possível cadastrar.",
+      });
+      continue;
+    }
+    criados++;
+  }
+
+  revalidatePath("/admin-sistema");
+  return { data: { criados, erros } };
+}

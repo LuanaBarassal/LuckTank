@@ -1783,6 +1783,32 @@ dashboard populado, `/alertas` mostrando os 2 críticos, `/onibus` com os
 3 veículos — tudo com dado real (fake), não mockado na tela. Página `/`
 testada em dev local, os dois estados (logado/deslogado) confirmados.
 
+## Cadastro de veículo em lote (2026-07-07)
+
+Depois de centralizar o cadastro de veículo no dono do sistema, cadastrar
+veículo virou trabalho manual repetitivo pra ela mesma em todo onboarding
+de cliente novo. Item pra economizar esse tempo (o gargalo real do
+modelo de negócio, não o cliente).
+
+- ✅ **`criarVeiculosEmLote`** (`admin-sistema/actions.ts`) +
+  `CriarVeiculosLoteForm`: cola uma lista copiada de planilha (uma linha
+  por veículo — placa, prefixo, modelo, marca, ano, separados por TAB ou
+  vírgula), valida e cadastra cada linha separadamente. Só a placa é
+  obrigatória. **Nunca falha tudo por causa de uma linha ruim** — resultado
+  parcial (X cadastrados, lista de erro por linha com o motivo exato:
+  placa inválida, placa duplicada, etc.), não tudo-ou-nada. Capacidade de
+  tanque/combustível/consumo de referência ficam de fora do lote de
+  propósito (menos comum saber "de cabeça" pra frota inteira) — entram no
+  cadastro individual depois, que a própria empresa cliente já pode
+  editar.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. Lógica de parsing (TAB, vírgula, placa sozinha,
+minúsculo) validada isoladamente com `node -e` fora do navegador.
+**Não verificado**: nunca aberto no navegador de verdade — não há
+credencial de dono do sistema disponível nesta sessão pra testar contra
+o banco real.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
