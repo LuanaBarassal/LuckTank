@@ -31,6 +31,20 @@ function parsearJsonSeguro<T>(texto: string | undefined): T | null {
   }
 }
 
+// Lista fechada, nunca o valor cru: `foto.type` também é auto-declarado pelo
+// client (assim como `foto.name`), mas aqui só decide uma extensão dentro de
+// um conjunto pequeno e conhecido — não pode carregar nada arbitrário pra
+// dentro da key do Storage, então não precisa da validação por assinatura de
+// bytes que `validarFoto` já fez (essa garante que o CONTEÚDO é imagem;
+// esta função só nomeia o arquivo).
+function extensaoSeguraFoto(mimeType: string): string {
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("heic") || mimeType.includes("heif")) return "heic";
+  return "bin";
+}
+
 // Único ponto de escrita de abastecimento. O motorista não tem sessão, então
 // tudo aqui roda com a service role — por isso a validação de negócio (KM,
 // resolução de veículo/empresa a partir do qr_token) precisa acontecer
@@ -166,7 +180,15 @@ export async function POST(request: NextRequest) {
     exifTimestamp = exif.timestamp;
     exifGps = exif.gps;
 
-    const caminho = `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}-${foto.name}`;
+    // `registro_uuid` (já validado como UUID pelo schema) + extensão de uma
+    // lista fechada — NUNCA `foto.name` (achado numa auditoria adversarial:
+    // é o nome de arquivo declarado pelo client num FormData, então
+    // totalmente controlável por quem chama este endpoint sem sessão nenhuma;
+    // ia direto pra dentro da key do Storage e, mais adiante, pro header
+    // Content-Disposition em /api/midias/[id] — um jeito de injetar caracteres
+    // arbitrários num header HTTP a partir de um campo que nunca devia ser
+    // confiável).
+    const caminho = `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}.${extensaoSeguraFoto(foto.type)}`;
     const { error: uploadError } = await admin.storage
       .from("comprovantes")
       .upload(caminho, buffer, { contentType: foto.type || "image/jpeg", upsert: true });

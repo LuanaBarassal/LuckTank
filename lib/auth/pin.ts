@@ -1,6 +1,7 @@
 import "server-only";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { limitarPin } from "@/lib/rate-limit";
 
 export const REGEX_PIN = /^\d{6}$/;
 
@@ -40,8 +41,19 @@ function compararHashPin(pin: string, hashArmazenado: string): boolean {
 // pra Configurações listar o time); se este SELECT corresse pelo client
 // autenticado, qualquer usuário logado poderia ler o hash de PIN de
 // qualquer colega só trocando o `id` na query.
+//
+// Também é o único ponto por onde as 3 chamadas reais de verificação de PIN
+// passam (exclusão de abastecimento, export Excel/PDF, export de fotos) —
+// por isso o rate limit entra aqui, e não em cada call site: garante que
+// nenhum deles esqueça de aplicar o limite. Estourar o limite retorna
+// `false`, igual a PIN errado — nunca revela pro chamador que o motivo foi
+// rate limit em vez de PIN incorreto, o que evitaria dar uma pista extra
+// pra quem está tentando adivinhar.
 export async function verificarPinDoUsuario(usuarioId: string, pin: string): Promise<boolean> {
   if (!REGEX_PIN.test(pin)) return false;
+
+  const { permitido } = await limitarPin(usuarioId);
+  if (!permitido) return false;
 
   const admin = createAdminClient();
   const { data } = await admin

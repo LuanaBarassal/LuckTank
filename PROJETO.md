@@ -1836,6 +1836,75 @@ verificação (adicionar registros DNS onde o domínio foi registrado) não
 foi concluída nesta sessão. Nenhuma conta foi criada, nenhuma env var
 foi adicionada, nenhum código foi escrito.
 
+## Auditoria adversarial de segurança (2026-07-07)
+
+A pedido do usuário ("trabalhe como um hacker... tente invadir meu
+sistema, não invada realmente"): revisão ofensiva-mas-defensiva do
+sistema inteiro, sem exploração real contra produção, achados corrigidos
+na mesma sessão.
+
+**Achado 1 — PIN sem rate limit.** `verificarPinDoUsuario`
+(`lib/auth/pin.ts`) é o único ponto de leitura/comparação de
+`usuarios.pin_hash` no projeto, usado pelas 3 ações protegidas por PIN
+(exclusão de abastecimento, export Excel/PDF, export de fotos em ZIP) —
+mas nada limitava quantas vezes um PIN podia ser tentado. Um atacante com
+uma sessão válida (roubada, ou computador destravado) podia tentar força
+bruta as 1.000.000 de combinações de um PIN de 6 dígitos sem nenhum
+throttling, esvaziando o propósito do PIN como segunda camada contra
+sessão comprometida. Corrigido adicionando `limitarPin` em
+`lib/rate-limit.ts` (5 tentativas / 5 min, chave por `usuarioId` — não
+por IP, porque o atacante relevante aqui já tem sessão, então trocar de
+rede não pode resetar a contagem) e chamando de dentro do próprio
+`verificarPinDoUsuario`, garantindo que as 3 call sites fiquem protegidas
+automaticamente sem precisar lembrar de aplicar em cada uma. Estourar o
+limite retorna `false` — igual a PIN errado, nunca revela ao chamador que
+o motivo foi rate limit (evita dar pista extra pra quem tenta adivinhar).
+
+**Achado 2 — nome de arquivo do client controlava chave no Storage e
+header HTTP.** `/api/abastecimentos` (endpoint público, sem sessão —
+usado pelo motorista via QR) construía a chave do Storage como
+`${empresa_id}/${veiculo_id}/${registro_uuid}-${foto.name}`, usando
+`foto.name` — o nome de arquivo declarado no FormData multipart, portanto
+totalmente controlável por quem chama o endpoint direto (curl, script),
+sem passar pela compressão/nome sanitizado que o client legítimo gera.
+Esse valor seguia sem sanitização até `/api/midias/[id]`, que monta
+`Content-Disposition: attachment; filename="${nomeArquivo}"` a partir do
+mesmo caminho — ou seja, um campo nunca confiável alimentando um header
+HTTP. Corrigido descartando `foto.name` inteiramente: a chave agora usa só
+`registro_uuid` (já validado como UUID pelo schema) + uma extensão de uma
+lista fechada (`extensaoSeguraFoto`, baseada no `foto.type` mas mapeada
+pra um conjunto pequeno e conhecido, nunca repassando o valor cru).
+
+**Achado 3 — zero security headers.** `next.config.mjs` não configurava
+nenhum header de segurança. Adicionado CSP (escopada só ao que o app
+realmente usa: self + Supabase, sem terceiros soltos), `X-Frame-Options:
+DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
+`Permissions-Policy` (geolocalização desabilitada, coerente com a regra
+de negócio de não mexer com GPS) e HSTS. Testado em build de produção
+real (`next build` + `next start`, não só `next dev` — Fast Refresh do
+dev mode usa `eval()`, que a CSP bloqueia de propósito, então testar só
+em dev geraria um falso positivo): dashboard com gráficos Recharts,
+listagem/detalhe de veículo, geração de QR (SVG/PNG) e o fluxo completo
+do motorista em `/r/[qrToken]` — todos carregando sem nenhum erro de CSP
+no console.
+
+**Descartado por baixo risco prático**: `npm audit` aponta 14 CVEs em
+`next@14.2.35` (já a última patch da série 14.2.x — corrigir de verdade
+exige pular pra 14→16, uma mudança maior demais pra forçar nesta sessão)
+e uma CVE moderada em `uuid`. Nenhuma delas se aplica de fato ao uso real
+deste app: as CVEs de `next` cobrem `next/image` (o app usa `<img>` puro),
+upgrade de WebSocket (não usado), i18n do Pages Router (app é só App
+Router) e nonce de CSP em `next/script` (não usado) — o risco residual
+real é da classe DoS/cache-poisoning, não vazamento de dado. A CVE de
+`uuid` é sobre `v3`/`v5`/`v6` com buffer fornecido pelo caller;
+confirmado por leitura do código-fonte que `exceljs` (única dependência
+que usa `uuid` neste projeto) só chama `v4()`, função não afetada —
+não-exploitável na prática, independente da versão.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. CSP testada ao vivo contra build de produção
+(`next start`), não só `next dev`.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas

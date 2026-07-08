@@ -34,6 +34,20 @@ const limiteAbastecimento = redis
     })
   : null;
 
+// PIN (export Excel/PDF/fotos, exclusão de abastecimento): achado numa
+// auditoria adversarial — nada limitava quantas vezes o PIN podia ser
+// tentado. Sessão é o que autentica quem está chamando (nunca IP: o
+// atacante relevante aqui já tem uma sessão válida, roubada ou de um
+// computador destravado, e está tentando adivinhar só o PIN), então a
+// chave é o usuarioId, não o IP — trocar de rede não reseta a contagem.
+// 5 tentativas / 5 min é apertado o bastante pra inviabilizar força bruta
+// num PIN de 6 dígitos (1 milhão de combinações) mesmo com scrypt barato
+// de calcular, e folgado o bastante pra um usuário de verdade que erra
+// duas vezes de propósito.
+const limitePin = redis
+  ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "5 m"), prefix: "lucktank:pin" })
+  : null;
+
 export function obterIp(request: Request): string {
   // Vercel injeta x-forwarded-for; pega o primeiro IP da cadeia (o do cliente).
   const encaminhado = request.headers.get("x-forwarded-for");
@@ -54,5 +68,11 @@ export async function limitarOcr(ip: string): Promise<ResultadoLimite> {
 export async function limitarAbastecimento(ip: string): Promise<ResultadoLimite> {
   if (!limiteAbastecimento) return { permitido: true };
   const { success } = await limiteAbastecimento.limit(ip);
+  return { permitido: success };
+}
+
+export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
+  if (!limitePin) return { permitido: true };
+  const { success } = await limitePin.limit(usuarioId);
   return { permitido: success };
 }
