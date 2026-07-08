@@ -1805,9 +1805,19 @@ modelo de negócio, não o cliente).
 **Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
 `npm run build` limpos. Lógica de parsing (TAB, vírgula, placa sozinha,
 minúsculo) validada isoladamente com `node -e` fora do navegador.
-**Não verificado**: nunca aberto no navegador de verdade — não há
-credencial de dono do sistema disponível nesta sessão pra testar contra
-o banco real.
+
+**Testado de verdade no navegador** (sessão seguinte, a pedido do
+usuário): sem credencial real de dono do sistema disponível, adicionado
+temporariamente o e-mail da conta de demonstração
+(`demo@lucktank.com.br`) em `DONO_SISTEMA_EMAILS` — só no `.env.local`
+(nunca commitado, nunca afetou produção), revertido logo depois do
+teste. Colado um lote de 4 linhas (2 válidas, 1 com placa curta demais,
+1 duplicando a placa da primeira) na empresa "Frota Demonstração":
+resultado "2 veículo(s) cadastrado(s)" + as duas mensagens de erro
+corretas por linha ("Placa muito curta" / "Já existe um veículo com
+essa placa nesta empresa"), confirmado depois na aba Veículos que só os
+2 válidos foram criados. Os 2 veículos de teste removidos do banco em
+seguida.
 
 ## Notificação por e-mail de alerta crítico — adiada (2026-07-07)
 
