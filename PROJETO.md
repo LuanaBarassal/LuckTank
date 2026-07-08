@@ -1742,6 +1742,47 @@ pra transportadora de carga/utilitário sem nem abrir a conversa.
 `npm run build` limpos. Testado no navegador local: menu e título da tela
 confirmados mostrando "Veículos".
 
+## Conta de demonstração + página pública em "/" (2026-07-07)
+
+Pedido comercial: material pra usar em reunião de venda, sem gastar nada
+novo.
+
+- ✅ **Empresa "Frota Demonstração"** criada no projeto Supabase real (não
+  um ambiente separado — não existe staging): 3 veículos (prefixos
+  2201/2202/2203), 2 motoristas, ~29 abastecimentos distribuídos nos
+  últimos 30 dias com litros/km/preço realistas, e 2 anomalias
+  deliberadas (nota fiscal duplicada + litros acima da capacidade do
+  tanque) já geradas como alertas críticos pendentes — pra já abrir
+  `/alertas` numa reunião e mostrar o sistema pegando fraude de verdade,
+  sem precisar simular nada ao vivo. Login:
+  `demo@lucktank.com.br` — **senha só passada no chat com o usuário,
+  nunca escrita aqui nem versionada** (mesmo cuidado já usado desde a
+  Fase 2 com a senha do primeiro administrador real).
+  Semeado via script único (`_seed-demo-temp.mjs`, na raiz do projeto,
+  **apagado logo depois de rodar** — não é parte do app, não deveria
+  voltar a existir no repo).
+- ✅ **Página pública em `/`** (`app/page.tsx`): antes era só um
+  `redirect("/login")` puro (Fase 8, Bloco 4). Virou uma página de
+  apresentação de verdade — hero, "mockup" da tela do dashboard (mesmas
+  classes de cor do dashboard real, não é screenshot), 4 cards de
+  proposta de valor, um card de alerta crítico de exemplo, "como
+  funciona" em 3 passos, preço (R$ 1.000/ano) com CTA de WhatsApp
+  ((13) 99770-0901, link `wa.me` com mensagem pré-preenchida) e e-mail
+  (`luckfrotas@gmail.com`), rodapé com link pra `/privacidade`/`/termos`.
+  Detecta sessão ativa: se já estiver logado, o botão do topo vira "Ir
+  para o Dashboard" em vez de "Entrar" — não força redirect, só troca o
+  CTA.
+- ✅ **Nenhum gasto novo**: sem domínio customizado, sem serviço de
+  imagem/hospedagem extra — os "screenshots" da página são recriados em
+  HTML/CSS com as mesmas classes Tailwind do app de verdade.
+
+**Verificado**: `npm test` (101/101), `tsc --noEmit`, `eslint .` e
+`npm run build` limpos. Testado no navegador contra produção
+(`luck-tank.vercel.app`): login na conta demo confirmado funcionando,
+dashboard populado, `/alertas` mostrando os 2 críticos, `/onibus` com os
+3 veículos — tudo com dado real (fake), não mockado na tela. Página `/`
+testada em dev local, os dois estados (logado/deslogado) confirmados.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
