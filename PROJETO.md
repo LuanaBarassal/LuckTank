@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-03 (pós-Fase 8: validação automatizada de fraude/negócio + relatório de consumo por veículo).
+Última atualização: 2026-07-08 (redesign da landing page + planos por periodicidade + correção do CTA de login).
 
 ## Visão do produto
 
@@ -1938,6 +1938,67 @@ empresas de demonstração) limpos via script depois do teste.
 `npm run build` limpos. Migration aplicada em produção via
 `supabase db push --linked`; `types/database.ts` regerado via
 `supabase gen types typescript --linked`.
+
+## Redesign da landing page + planos por periodicidade (2026-07-08)
+
+Três pedidos do usuário sobre `app/page.tsx` (a página pública de vendas em
+"/", criada em 2026-07-07): visual mais rico, tirar o preço fixo, corrigir o
+botão que ia direto pro dashboard.
+
+- ✅ **Visual mais rico, sem pesar o bundle.** Referência visual lida direto
+  de `C:\Users\User\Desktop\luckfrota\src\pages\LandingPage.jsx` (produto
+  irmão) — usados como inspiração: blobs de gradiente com blur no fundo,
+  grid pattern sutil, mockup do dashboard dentro de uma "janela de
+  navegador" (barra com 3 bolinhas + URL fake), cards flutuantes decorativos
+  sobre o mockup, ícone por card de valor, círculo numerado + linha
+  conectora nos 3 passos de "como funciona". **Não copiados do LuckFrota**:
+  números fabricados ("500+ transportadores", "50.000+ viagens") e
+  depoimentos de clientes fictícios — LuckTank tem 1 cliente piloto real
+  (Expresso Mundial); inventar prova social seria mentira, então essa parte
+  da referência foi descartada de propósito. Nova dependência
+  `lucide-react` (mesma versão usada no LuckFrota, `^0.323.0`) — ícones SVG
+  tree-shaken, sem custo de runtime. `tailwind.config.ts` ganhou 2 keyframes
+  novos (`float`, `fadeInUp`) — só CSS, sem JavaScript de scroll/observer.
+  **A página continua um Server Component puro** (nenhum `"use client"`
+  novo) — toda a riqueza visual é CSS/Tailwind + SVG estático, então o
+  bundle da rota "/" não engordou de verdade: **181 B / 96,2 kB** de First
+  Load JS depois do redesign (antes: 138 B / 87,5 kB — a diferença é o
+  bundle do ícone, não JS de interação).
+- ✅ **Preço fixo removido, seção de periodicidade no lugar.** A seção
+  "Plano único — R$ 1.000/ano" virou "Formas de pagamento": 4 cards (Mensal,
+  Trimestral, Semestral, Anual — sem nenhum valor em R$, só a cadência),
+  card Anual com badge "Mais econômico" (sem número, só indica que existe
+  desconto na conversa de venda). Abaixo, um card de destaque com o texto
+  pedido pelo usuário: "Assim que fecharmos, sua conta já está pronta — a
+  gente cadastra os veículos, gera os QR Codes e cria os acessos do seu
+  escritório antes de você perguntar. Você só chega e usa — e ensinamos
+  exatamente tudo que precisar, no seu ritmo." CTA "Pedir uma proposta"
+  (WhatsApp) no lugar de "Falar no WhatsApp" genérico, reforçando que o
+  valor é negociado por conversa, não uma tabela fixa. O parágrafo de ROI
+  (seção separada, "por que isso se paga sozinho") foi mantido — ele cita
+  "R$ 280" (ticket médio de abastecimento) e "cobre o valor da assinatura",
+  mas nunca menciona a mensalidade em si, então não conflita com o pedido
+  de tirar o preço fixo.
+- ✅ **Botão do cabeçalho sempre manda pro login.** Antes: `Link href={user
+  ? "/dashboard" : "/login"}` — se a sessão do Supabase estivesse ativa no
+  navegador, o botão virava "Ir para o Dashboard" e pulava a tela de login.
+  O usuário reportou que isso estava acontecendo e pediu pra sempre passar
+  pelo login primeiro. Removida a checagem de sessão inteira (o
+  `createClient()` + `getUser()` que existia só pra essa decisão) — a
+  página deixou de precisar ser `async`, o botão é estático `<Link
+  href="/login">Entrar</Link>`, sem branch nenhuma. **Validado no
+  navegador** (`npm run dev`): clique no botão leva direto pro formulário
+  de login (`/login`), independente de estado de sessão — não há mais
+  caminho que pule a tela de login a partir da página pública.
+
+**Validado**: `tsc --noEmit`, `eslint`, `npm test` (101/101) e `npm run
+build` limpos (rota `/` continua estática, `○`). **No navegador** (`npm run
+dev`, Chrome automatizado): hero, mockup com cards flutuantes, os 4 cards de
+valor, "como funciona" com a linha conectora, e a nova seção de planos —
+todos renderizando como esperado, sem quebra de layout. Único item no
+console foi o erro de CSP/`eval()` do Fast Refresh do modo dev, já
+documentado como falso-positivo (só existe em `next dev`, não em produção —
+ver "Auditoria adversarial de segurança").
 
 ## Regras invariantes (não podem quebrar)
 
