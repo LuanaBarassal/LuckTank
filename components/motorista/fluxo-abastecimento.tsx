@@ -354,6 +354,16 @@ export default function FluxoAbastecimento({
       setPasso("processando");
       const resultado = await lerFotoComGemini<DadosHodometro>(fotoHodometroFile, "hodometro");
       setHodometroOcrResultado(resultado);
+      // Preenche o campo KM com a leitura, mas o motorista sempre vê e pode
+      // corrigir no formulário antes de confirmar — nunca grava direto sem
+      // essa confirmação (hodômetro erra fácil no OCR: reflexo, ângulo,
+      // dígito de décimos). Sem leitura (null) ou baixa confiança (o motor
+      // de bomba/hodômetro só devolve "alta"/"falhou" — ver
+      // lib/ocr/gemini-hodometro-provider.ts), cai no que já existia:
+      // campo vazio, motorista digita manualmente.
+      if (resultado?.dados?.km != null) {
+        setValores((atual) => ({ ...atual, kmAtual: String(resultado.dados!.km) }));
+      }
     } else {
       setHodometroOcrResultado(null);
     }
@@ -621,12 +631,14 @@ export default function FluxoAbastecimento({
 
           {passo === "formulario" && (
             <div className="flex flex-col gap-4">
-              {/* Leitura do hodômetro (Bloco 2) — só confirmação visual por
-                  enquanto; o Bloco 3 troca isto pelo preenchimento automático
-                  do campo KM com confirmação do motorista. */}
+              {/* Bloco 3: o campo "KM atual" abaixo já vem preenchido com
+                  esta leitura (ver handleContinuarFotoHodometro) — o
+                  motorista sempre confere/edita antes de confirmar, nunca
+                  grava direto. */}
               {hodometroOcrResultado?.dados?.km != null && (
                 <p className="rounded-lg bg-sucesso-50 px-3 py-2 text-sm font-medium text-sucesso-700">
-                  Lemos do hodômetro: {hodometroOcrResultado.dados.km} km
+                  Preenchemos o KM com a leitura do hodômetro ({hodometroOcrResultado.dados.km} km) —
+                  confira antes de confirmar.
                 </p>
               )}
               <PassoFormulario

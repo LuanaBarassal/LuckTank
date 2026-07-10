@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-10 (3 fotos guiadas — Bloco 2: Gemini lê bomba e hodômetro; KM auto-preenchido e conferência cruzada vêm nos próximos blocos).
+Última atualização: 2026-07-10 (3 fotos guiadas — Bloco 3: KM auto-preenchido pelo hodômetro, motorista confirma/edita; conferência cruzada vem no próximo bloco).
 
 ## Visão do produto
 
@@ -2584,6 +2584,50 @@ regras de divergência, exibição no escritório) ficam para as próximas sess�
   preenchido a partir do hodômetro (motorista sempre digita, mesmo
   quando `hodometroOcrResultado` tem um valor); nenhuma regra de
   divergência ainda; escritório ainda não distingue as 3 fotos.
+
+### Bloco 3 — KM do hodômetro preenche, motorista confirma (2026-07-10)
+
+- ✅ **`handleContinuarFotoHodometro` agora preenche `valores.kmAtual`**
+  quando a leitura tem `km` não nulo (`resultado.dados.km`) — antes só
+  guardava o resultado em estado sem usar em nenhum campo. O motorista
+  chega no formulário já com o campo preenchido, mas **sempre pode ver e
+  corrigir** antes de confirmar — nunca grava direto sem passar pelo
+  formulário (mesmo padrão já usado pros campos do cupom desde a Fase 4).
+  Sem leitura (`km` null) ou foto pulada/offline, o campo continua vazio,
+  motorista digita manualmente — comportamento de antes, inalterado.
+  Confiança do hodômetro é binária (`"alta"` só com `km` presente,
+  `"falhou"` senão — ver Bloco 2); não existe "baixa confiança" separada
+  pra esse tipo de leitura, então "sem leitura confiável" e "km null" são
+  a mesma coisa aqui.
+- ✅ **Legenda de confirmação atualizada**: "Preenchemos o KM com a leitura
+  do hodômetro (X km) — confira antes de confirmar." (antes, Bloco 2, era
+  só um aviso informativo sem o campo estar de fato preenchido).
+- ✅ **Bloqueio de KM continua valendo sobre o valor CONFIRMADO** — nenhuma
+  mudança no endpoint nem na checagem (`kmMenorQueUltimoRegistrado`
+  continua comparando o que está em `parsed.data.km_atual`, que é
+  exatamente o que veio no campo do formulário no momento do envio,
+  independente de ter sido preenchido pela IA ou digitado). Como o valor
+  confirmado é o que sempre trafegou por esse campo, o invariante #6 não
+  precisou de nenhum ajuste.
+- **Validado no navegador** (build de produção, veículo descartável):
+  gerei uma imagem sintética de hodômetro digital (dígitos grandes estilo
+  LCD, "154823") e confirmei primeiro via `/api/ocr` direto que o Gemini
+  lê exatamente esse número; depois rodei o wizard completo — cupom
+  falhando de propósito (foto sem dado real), bomba pulada, hodômetro
+  com essa imagem: campo "KM atual" chegou no formulário já com
+  `154823` e a legenda de confirmação certa. **Editei o valor pra 154825**
+  (simulando o motorista corrigindo uma leitura errada) e confirmei o
+  abastecimento — `abastecimentos.km_atual` gravado no banco confirmado
+  como **154825** (o valor confirmado/editado), não 154823 (a leitura
+  bruta) — prova que a confirmação/edição do motorista é respeitada, a
+  IA só sugere. Dado de teste removido depois, confirmado por query
+  independente. `tsc`, `lint`, `test` (116/116) e `build` limpos.
+- **Pendências explícitas pro Bloco 4 em diante**: nenhuma regra de
+  divergência bomba×cupom ou hodômetro×confirmado existe ainda — as
+  leituras de bomba/hodômetro não são enviadas ao servidor na submissão
+  (ficam só no estado do client); isso entra no Bloco 4, junto com as
+  colunas/migration necessárias pra persistir o que foi lido vs. o que
+  foi confirmado. Escritório ainda não distingue as 3 fotos.
 
 ## Regras invariantes (não podem quebrar)
 
