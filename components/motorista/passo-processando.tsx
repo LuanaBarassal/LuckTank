@@ -1,4 +1,12 @@
-export default function PassoProcessando() {
+interface Props {
+  titulo?: string;
+  subtitulo?: string;
+}
+
+export default function PassoProcessando({
+  titulo = "Lendo o comprovante...",
+  subtitulo = "Só um instante, estamos conferindo os dados.",
+}: Props) {
   return (
     <div className="flex flex-col items-center gap-4 py-14 text-center">
       <div
@@ -6,8 +14,8 @@ export default function PassoProcessando() {
         aria-hidden
       />
       <div>
-        <p className="font-medium text-neutral-900">Lendo o comprovante...</p>
-        <p className="mt-1 text-sm text-neutral-500">Só um instante, estamos conferindo os dados.</p>
+        <p className="font-medium text-neutral-900">{titulo}</p>
+        <p className="mt-1 text-sm text-neutral-500">{subtitulo}</p>
       </div>
     </div>
   );

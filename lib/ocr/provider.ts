@@ -19,18 +19,39 @@ export const dadosExtraidosSchema = z.object({
 
 export type DadosExtraidos = z.infer<typeof dadosExtraidosSchema>;
 
+// Visor da bomba (captura guiada de 3 fotos, Bloco 2, 2026-07-10) — mesma
+// regra de "null em vez de chutar" do cupom.
+export const dadosBombaSchema = z.object({
+  litros: z.number().nullable(),
+  valor_total: z.number().nullable(),
+  valor_litro: z.number().nullable(),
+});
+
+export type DadosBomba = z.infer<typeof dadosBombaSchema>;
+
+// Hodômetro (captura guiada de 3 fotos, Bloco 2, 2026-07-10) — só um campo:
+// a leitura serve pra conferir contra o KM que o motorista digitar/confirmar
+// (Bloco 3/4), nunca é gravada como o KM oficial sozinha.
+export const dadosHodometroSchema = z.object({
+  km: z.number().nullable(),
+});
+
+export type DadosHodometro = z.infer<typeof dadosHodometroSchema>;
+
 export type OcrConfianca = "alta" | "media" | "baixa" | "falhou";
 
-export interface OcrResultado {
+export interface OcrResultado<TDados = DadosExtraidos> {
   sucesso: boolean;
   confianca: OcrConfianca;
-  dados: DadosExtraidos | null;
+  dados: TDados | null;
   bruto: unknown;
   versaoPrompt: string;
 }
 
 // Interface independente de provedor — trocar de Gemini pra Claude/GPT no
-// futuro é só implementar isto de novo, nada mais no app muda.
-export interface OcrProvider {
-  extrair(imagem: { buffer: Buffer; mimeType: string }): Promise<OcrResultado>;
+// futuro é só implementar isto de novo, nada mais no app muda. Genérica em
+// TDados pra poder ser reaproveitada por cupom (padrão, default do tipo),
+// bomba e hodômetro sem duplicar a forma da interface.
+export interface OcrProvider<TDados = DadosExtraidos> {
+  extrair(imagem: { buffer: Buffer; mimeType: string }): Promise<OcrResultado<TDados>>;
 }

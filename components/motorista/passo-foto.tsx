@@ -10,6 +10,9 @@ interface Props {
   total: number;
   preview: string | null;
   mensagemErro?: string | null;
+  // Confirmação positiva (ex.: o que a IA leu na etapa anterior) — estilo
+  // diferente de mensagemErro, nunca as duas ao mesmo tempo na prática.
+  mensagemInfo?: string | null;
   obrigatoria?: boolean;
   onFotoChange: (file: File | null) => void;
   onVoltar: () => void;
@@ -24,6 +27,7 @@ export default function PassoFoto({
   total,
   preview,
   mensagemErro,
+  mensagemInfo,
   obrigatoria = true,
   onFotoChange,
   onVoltar,
@@ -49,6 +53,12 @@ export default function PassoFoto({
         <h2 className="text-lg font-semibold text-neutral-900">{titulo}</h2>
       </div>
       <p className="text-sm text-neutral-500">{instrucao}</p>
+
+      {mensagemInfo && (
+        <p className="rounded-lg bg-sucesso-50 px-3 py-2 text-sm font-medium text-sucesso-700">
+          {mensagemInfo}
+        </p>
+      )}
 
       {mensagemErro && (
         <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">

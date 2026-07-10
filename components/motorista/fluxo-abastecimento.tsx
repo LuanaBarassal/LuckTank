@@ -10,7 +10,7 @@ import PassoFormulario, {
 } from "@/components/motorista/passo-formulario";
 import PassoSucesso from "@/components/motorista/passo-sucesso";
 import FilaPendencias from "@/components/motorista/fila-pendencias";
-import type { OcrConfianca, OcrResultado } from "@/lib/ocr/provider";
+import type { DadosBomba, DadosHodometro, OcrConfianca, OcrResultado } from "@/lib/ocr/provider";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { adicionarNaFila } from "@/lib/offline/db";
 import { comprimirImagem } from "@/lib/offline/comprimir-imagem";
@@ -128,6 +128,17 @@ export default function FluxoAbastecimento({
   const [tentativasOcr, setTentativasOcr] = useState(0);
   const [ocrMeta, setOcrMeta] = useState<MetaOcr | null>(null);
   const [avisoFormulario, setAvisoFormulario] = useState<string | null>(null);
+  // Qual leitura está rodando agora — só define a mensagem do spinner
+  // (passo "processando" é compartilhado pelas 3 fotos).
+  const [processandoRotulo, setProcessandoRotulo] = useState<"cupom" | "bomba" | "hodometro">("cupom");
+  // Leitura da bomba/hodômetro (Bloco 2) — guardada aqui pra blocos
+  // seguintes usarem (preencher KM com confirmação, conferência cruzada
+  // bomba×cupom e hodômetro×KM). Ainda não é exibida/usada no formulário
+  // além da legenda de confirmação da bomba.
+  const [bombaOcrResultado, setBombaOcrResultado] = useState<OcrResultado<DadosBomba> | null>(null);
+  const [hodometroOcrResultado, setHodometroOcrResultado] = useState<OcrResultado<DadosHodometro> | null>(
+    null
+  );
 
   const [valores, setValores] = useState<ValoresFormulario>(VALORES_INICIAIS);
   const [registroUuid, setRegistroUuid] = useState(() => crypto.randomUUID());
@@ -187,6 +198,8 @@ export default function FluxoAbastecimento({
     setTentativasOcr(0);
     setOcrMeta(null);
     setAvisoFormulario(null);
+    setBombaOcrResultado(null);
+    setHodometroOcrResultado(null);
     setValores(VALORES_INICIAIS);
     setRegistroUuid(crypto.randomUUID());
     setErro(null);
@@ -209,6 +222,7 @@ export default function FluxoAbastecimento({
       return;
     }
 
+    setProcessandoRotulo("cupom");
     setPasso("processando");
 
     const formData = new FormData();
@@ -292,21 +306,63 @@ export default function FluxoAbastecimento({
     }
   }
 
-  function handleContinuarFotoBomba() {
+  // Lê a foto com o Gemini (tipo "bomba"/"hodometro") e guarda o resultado —
+  // nunca trava o fluxo: sem internet, sem arquivo, ou qualquer falha na
+  // leitura, o motorista segue em frente do mesmo jeito (essas 2 fotos são
+  // evidência complementar opcional, ver Bloco 1). O resultado só é
+  // consumido pelos blocos seguintes (KM auto-preenchido, conferência
+  // cruzada) — aqui ainda é só "ler e guardar".
+  async function lerFotoComGemini<TDados>(
+    file: File,
+    tipo: "bomba" | "hodometro"
+  ): Promise<OcrResultado<TDados> | null> {
+    try {
+      const formData = new FormData();
+      formData.set("qr_token", qrToken);
+      formData.set("tipo", tipo);
+      const fotoParaOcr = await comprimirImagem(file, 1600, 0.85);
+      formData.set("foto", fotoParaOcr, file.name);
+      const resposta = await fetch("/api/ocr", { method: "POST", body: formData });
+      const resultado: OcrResultado<TDados> = await resposta.json();
+      return resultado.sucesso ? resultado : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function handleContinuarFotoBomba() {
+    if (fotoBombaFile && estaOnline) {
+      setProcessandoRotulo("bomba");
+      setPasso("processando");
+      const resultado = await lerFotoComGemini<DadosBomba>(fotoBombaFile, "bomba");
+      setBombaOcrResultado(resultado);
+    } else {
+      setBombaOcrResultado(null);
+    }
     setPasso("foto-hodometro");
   }
 
   function handlePularFotoBomba() {
     handleFotoBombaChange(null);
+    setBombaOcrResultado(null);
     setPasso("foto-hodometro");
   }
 
-  function handleContinuarFotoHodometro() {
+  async function handleContinuarFotoHodometro() {
+    if (fotoHodometroFile && estaOnline) {
+      setProcessandoRotulo("hodometro");
+      setPasso("processando");
+      const resultado = await lerFotoComGemini<DadosHodometro>(fotoHodometroFile, "hodometro");
+      setHodometroOcrResultado(resultado);
+    } else {
+      setHodometroOcrResultado(null);
+    }
     setPasso("formulario");
   }
 
   function handlePularFotoHodometro() {
     handleFotoHodometroChange(null);
+    setHodometroOcrResultado(null);
     setPasso("formulario");
   }
 
@@ -509,7 +565,22 @@ export default function FluxoAbastecimento({
             />
           )}
 
-          {passo === "processando" && <PassoProcessando />}
+          {passo === "processando" && (
+            <PassoProcessando
+              titulo={
+                processandoRotulo === "bomba"
+                  ? "Lendo o visor da bomba..."
+                  : processandoRotulo === "hodometro"
+                    ? "Lendo o hodômetro..."
+                    : "Lendo o comprovante..."
+              }
+              subtitulo={
+                processandoRotulo === "cupom"
+                  ? "Só um instante, estamos conferindo os dados."
+                  : "Só um instante."
+              }
+            />
+          )}
 
           {passo === "foto-bomba" && (
             <PassoFoto
@@ -534,6 +605,13 @@ export default function FluxoAbastecimento({
               total={3}
               obrigatoria={false}
               preview={fotoHodometroPreview}
+              mensagemInfo={
+                bombaOcrResultado?.dados
+                  ? `Lemos da bomba: ${bombaOcrResultado.dados.litros ?? "?"} L · R$ ${
+                      bombaOcrResultado.dados.valor_total?.toFixed(2) ?? "?"
+                    }`
+                  : null
+              }
               onFotoChange={handleFotoHodometroChange}
               onVoltar={() => setPasso("foto-bomba")}
               onContinuar={handleContinuarFotoHodometro}
@@ -542,16 +620,26 @@ export default function FluxoAbastecimento({
           )}
 
           {passo === "formulario" && (
-            <PassoFormulario
-              valores={valores}
-              onChange={handleChangeFormulario}
-              kmMinimo={veiculo.kmAtual}
-              erro={erro}
-              aviso={avisoFormulario}
-              enviando={enviando}
-              onVoltar={() => setPasso("foto-hodometro")}
-              onSubmit={handleSubmit}
-            />
+            <div className="flex flex-col gap-4">
+              {/* Leitura do hodômetro (Bloco 2) — só confirmação visual por
+                  enquanto; o Bloco 3 troca isto pelo preenchimento automático
+                  do campo KM com confirmação do motorista. */}
+              {hodometroOcrResultado?.dados?.km != null && (
+                <p className="rounded-lg bg-sucesso-50 px-3 py-2 text-sm font-medium text-sucesso-700">
+                  Lemos do hodômetro: {hodometroOcrResultado.dados.km} km
+                </p>
+              )}
+              <PassoFormulario
+                valores={valores}
+                onChange={handleChangeFormulario}
+                kmMinimo={veiculo.kmAtual}
+                erro={erro}
+                aviso={avisoFormulario}
+                enviando={enviando}
+                onVoltar={() => setPasso("foto-hodometro")}
+                onSubmit={handleSubmit}
+              />
+            </div>
           )}
 
           {passo === "sucesso" && (

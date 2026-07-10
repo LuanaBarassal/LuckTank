@@ -1,8 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { geminiOcrProvider } from "@/lib/ocr/gemini-provider";
+import { geminiBombaProvider } from "@/lib/ocr/gemini-bomba-provider";
+import { geminiHodometroProvider } from "@/lib/ocr/gemini-hodometro-provider";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { validarFoto } from "@/lib/validacao/arquivo";
 import { limitarOcr, obterIp } from "@/lib/rate-limit";
+
+// Captura guiada de 3 fotos (Bloco 2, 2026-07-10): mesma rota atende os 3
+// tipos de leitura — "tipo" ausente ou desconhecido cai em "cupom" (mantém o
+// comportamento de sempre pro client existente, que nunca manda esse campo).
+// Cada provider já encapsula seu próprio prompt/schema/heurística de
+// confiança, mas reaproveita o MESMO motor de chamada (timeout, retry,
+// fallback de modelo) — ver lib/ocr/motor-gemini.ts.
+function providerPorTipo(tipo: string | null) {
+  if (tipo === "bomba") return geminiBombaProvider;
+  if (tipo === "hodometro") return geminiHodometroProvider;
+  return geminiOcrProvider;
+}
 
 // Plano Hobby da Vercel: teto rígido de 60s por function. Pior caso do OCR
 // (achado 2026-07-10): 1 tentativa (até 20s de timeout) + backoff (até 4s) +
@@ -65,7 +79,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validacao.erro }, { status: 400 });
   }
 
-  const resultado = await geminiOcrProvider.extrair({
+  const tipo = formData.get("tipo");
+  const provider = providerPorTipo(typeof tipo === "string" ? tipo : null);
+
+  const resultado = await provider.extrair({
     buffer,
     mimeType: foto.type || "image/jpeg",
   });
