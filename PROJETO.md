@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-08 (retry automático no OCR do Gemini — instabilidade dia a dia investigada).
+Última atualização: 2026-07-10 (diagnóstico e correção do OCR: timeout/retry diferenciado e troca do alias `gemini-flash-latest` por modelo fixo `gemini-2.5-flash`, com evidência real).
 
 ## Visão do produto
 
@@ -113,14 +113,19 @@ autenticado, com permissões por papel e um motor de alertas graduado
   primeiro registro, o que quebraria o bloqueio de KM silenciosamente.
   Qualquer página nova do motorista que só use `createAdminClient()` (sem
   sessão) precisa dessa mesma linha.
-- **(Fase 4) Nomes de modelo fixos do Gemini quebram.** `gemini-1.5-flash`
-  (usado desde a Fase 1 só pro health check) retornou 404 "not found" na
-  hora de usar de verdade — o modelo foi descontinuado. Troquei pra
-  `gemini-flash-latest`, um alias que o Google mantém apontando pro Flash
-  atual. Se o OCR começar a falhar do nada, checar
-  `GET https://generativelanguage.googleapis.com/v1beta/models?key=...`
+- **(Fase 4) Nomes de modelo fixos do Gemini quebram — MAS ver revisão de
+  2026-07-10 abaixo.** `gemini-1.5-flash` (usado desde a Fase 1 só pro
+  health check) retornou 404 "not found" na hora de usar de verdade — o
+  modelo foi descontinuado. Troquei pra `gemini-flash-latest`, um alias que
+  o Google mantém apontando pro Flash atual. Se o OCR começar a falhar do
+  nada, checar `GET https://generativelanguage.googleapis.com/v1beta/models?key=...`
   pra ver os modelos realmente disponíveis antes de qualquer outro
-  diagnóstico.
+  diagnóstico. **Atualização 2026-07-10**: o alias deixou de ser a opção
+  estável — trocou de comportamento 2x em menos de um ano (thinking pesado
+  sem aviso, depois passou a apontar pro Gemini 3.5 Flash com lentidão/503
+  recorrente) — voltou a usar nome fixo (`gemini-2.5-flash`), com o alias
+  como fallback só pra 404 de descontinuação real. Ver seção "Diagnóstico e
+  correção do OCR" mais abaixo pra decisão completa com evidência.
 - **(Fase 4) `tsconfig.json` precisou de `"target": "ES2018"` explícito**
   pra permitir a flag `u` de regex (usada em `\p{Diacritic}` pra remover
   acento na hora de mapear forma de pagamento do OCR pro enum do formulário).
@@ -2294,6 +2299,125 @@ não-determinismo do provedor; se a taxa de falha real (medida pelos logs
 "só teve sucesso na tentativa 2") for alta demais no uso real, o próximo
 passo seria considerar `@google/genai` (SDK novo, dá controle mais fino) —
 troca de dependência maior, não feita agora.
+
+## Diagnóstico e correção do OCR: encanamento (timeout/retry/modelo) + campos vazios (2026-07-10)
+
+Usuária relatou dois sintomas em produção: OCR "falha/trava com frequência"
+(não é ler errado, é não responder) e, separadamente, em fotos **nítidas e
+legíveis**, o Gemini respondia mas devolvia litros/valor_total/valor_litro
+vazios ou errados. Investigado antes de qualquer correção (pedido
+explícito da usuária), com evidência real contra a API, não só teoria.
+
+### Causa raiz — testada, não só hipótese
+
+Chamadas reais contra `gemini-flash-latest` (fora do app, sem gastar cota
+de produção) nesta sessão: **1 sucesso em 79s** (imagem trivial, sem dado
+real pra ler) e **4 falhas seguidas com 503 "high demand/UNAVAILABLE"**
+(entre 2,5s e 70s de espera até falhar) — 5 tentativas reais, 1 sucesso
+"vazio". `GET /v1beta/models/gemini-flash-latest` confirma `"thinking":
+true` como característica fixa do modelo atual por trás do alias (não mais
+ocasional, como achado em 2026-07-08). O alias hoje resolve pro Gemini 3.5
+Flash (GA em maio/2026, um modelo "frontier"/agentic, não o Flash leve
+original pro qual o prompt de extração foi calibrado na Fase 4) —
+confirmado via busca externa, e consistente com relatos de outros projetos
+sobre esse mesmo alias.
+
+**As duas queixas têm a mesma raiz**: o modelo por trás do alias mudou (de
+novo) pra uma versão mais pesada e instável. Sem `maxDuration` configurado
+em nenhuma rota, e sem timeout de requisição no SDK, uma chamada de 70-79s
+quase certamente estoura o teto do plano Hobby da Vercel (60s por
+function) — a function é morta pela plataforma antes que qualquer retry
+interno rode, então o motorista só vê a conexão cair, não um erro
+controlado.
+
+### Parte A — Encanamento (`lib/ocr/gemini-provider.ts`, `app/api/ocr/route.ts`)
+
+- **Timeout de requisição por tentativa**: `TIMEOUT_MS_POR_TENTATIVA =
+  20_000` via `requestOptions.timeout` do SDK (campo existe, mas o código
+  nunca passava isso) — falha rápido e controlado em vez de deixar a
+  Vercel matar a function sem aviso.
+- **`export const maxDuration = 55`** em `app/api/ocr/route.ts` — teto real
+  do plano Hobby é 60s; pior caso calculado (20s + até 4s de backoff + 20s
+  de 2ª tentativa) fica em ~44s, com folga.
+- **Retry deixou de ser "sempre tenta 2x"**: `chamarGeminiUmaVez` agora
+  RELANÇA a exceção em vez de engolir (quem decide se retry vale a pena é
+  `extrair()`). Só ganha uma 2ª tentativa (com backoff, 1,5s padrão ou o
+  `retryDelay` do próprio erro do Google quando presente, sempre limitado a
+  4s) quem falhar com **503 ou 429 respondido DENTRO do timeout** — sinal
+  de sobrecarga real e transitória. Timeout/abort, erro de parse/schema ou
+  qualquer outro status **não ganham retry aqui** — não adianta repetir do
+  mesmo jeito, e cada tentativa custa até 20s do orçamento apertado da
+  function. A segunda chance nesses casos já existe numa camada acima (o
+  client pede foto nova, até 2x — `MAXIMO_TENTATIVAS_OCR` em
+  `fluxo-abastecimento.tsx`, inalterado).
+- **Logging de diagnóstico temporário** (`[ocr-diagnostico]` nos logs da
+  Vercel): tentativa, modelo usado, resultado, tempo de resposta, tamanho
+  da imagem, `thoughtsTokenCount`, e no erro: status HTTP/mensagem/detalhes
+  (nunca a API key nem o buffer da foto). Deixado no código pra
+  acompanhar a taxa real de 503/timeout/fallback em produção por mais
+  alguns dias — considerar reduzir depois.
+
+### Parte B — Modelo fixo em vez do alias (`lib/gemini/client.ts`)
+
+Testado direto contra a API, **mesma foto real de comprovante** (cupom de
+Diesel, Auto Serviços Pit Stop, 430L, R$6,54/L, R$2.812,20 — fornecida pela
+usuária), mesmo prompt/schema exatos da produção:
+
+- `gemini-flash-latest`: **503 em todas as tentativas** nesta foto (não foi
+  possível nem completar uma comparação de campos — o alias não respondeu
+  com sucesso nenhuma vez contra este comprovante real na sessão).
+- `gemini-2.5-flash` (nome estável, não é alias nem snapshot datado):
+  **200 OK em 9,4s**, com **todos os campos essenciais corretos**: litros
+  `430`, valor_total `2812.2`, valor_litro `6.54` — batendo exato com o
+  cupom físico. Também acertou data, hora, posto, CNPJ e número da nota.
+
+**Achado lateral importante**: candidatos com sufixo de snapshot datado
+(`gemini-2.0-flash-001`, `gemini-2.0-flash-lite-001`) devolveram **429 com
+`limit: 0`** — cota **zero** no free tier deste projeto pra esses IDs
+específicos (não é cota consumida, é ausência de alocação free tier pra
+modelo "congelado"). Ou seja, não dá pra simplesmente fixar em qualquer
+nome de modelo — snapshots datados não funcionam no free tier deste
+projeto. `gemini-2.5-flash` (nome "solto", sem sufixo de data) tem cota
+real e funcionou.
+
+**Decisão**: `MODELO_FLASH_PRINCIPAL = "gemini-2.5-flash"` vira o modelo
+usado por padrão (`lib/gemini/client.ts`). `gemini-flash-latest` continua
+no código como `MODELO_FLASH_FALLBACK` — só entra em jogo se o principal
+um dia devolver 404 (descontinuação real), via
+`chamarComFallbackDeModelo` em `gemini-provider.ts`. Isso muda o
+trade-off documentado desde a Fase 4: antes, "nome fixo quebra quando
+descontinuado" pesava mais que a instabilidade do alias; hoje, o alias já
+provou ser a fonte da instabilidade (2 mudanças de comportamento sem aviso
+em menos de um ano), e uma descontinuação de modelo nomeado costuma vir
+com aviso prévio do Google — risco mais gerenciável que um remapeamento
+silencioso.
+
+**Prompt não foi alterado**: a mesma versão (`extrair-abastecimento.v2`,
+inalterada) que falhava/vinha vazia no modelo pesado extraiu tudo certo no
+modelo fixo — evidência de que o problema era o modelo, não o prompt
+(conforme a hipótese a testar). Ponto não coberto por este teste (não
+havia exemplo disponível nas fotos fornecidas): valor com separador de
+milhar (ex.: "2.750,00") — o prompt só instrui conversão de vírgula
+decimal, não desambiguação de ponto como milhar; fica como possível gap a
+observar se aparecer em produção.
+
+### Validação
+
+`tsc --noEmit`, `eslint .`, `npm test` (116/116) e `npm run build`
+confirmados limpos depois de todas as mudanças. **Testado ponta a ponta
+contra o endpoint real** (`npm run dev`, empresa/veículo descartáveis
+criados só pra isso e removidos por completo depois, confirmado por query
+independente): a MESMA foto real do comprovante enviada via `POST
+/api/ocr` retornou `sucesso: true`, `confianca: "alta"`, todos os campos
+essenciais corretos, em **7,9s** (bem dentro do timeout de 20s por
+tentativa e do `maxDuration` de 55s), usando `gemini-2.5-flash` na
+primeira tentativa (log `[ocr-diagnostico]` confirma `"modelo":
+"gemini-2.5-flash"`, sem necessidade de fallback nem retry).
+
+**Não testado**: o caminho de fallback pro alias (404 do modelo principal)
+e o retry com backoff em 503/429 real — ambos exigiriam forçar
+artificialmente essas condições (não reproduzido nesta sessão; a lógica foi
+revisada por leitura, não por execução real desses ramos específicos).
 
 ## Regras invariantes (não podem quebrar)
 

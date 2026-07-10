@@ -4,6 +4,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { validarFoto } from "@/lib/validacao/arquivo";
 import { limitarOcr, obterIp } from "@/lib/rate-limit";
 
+// Plano Hobby da Vercel: teto rígido de 60s por function. Pior caso do OCR
+// (achado 2026-07-10): 1 tentativa (até 20s de timeout) + backoff (até 4s) +
+// 2ª tentativa só em caso de 503/429 (até mais 20s) ~= 44s no pior caso —
+// 55s dá folga suficiente pro resto do handler (parse de FormData, validação
+// de arquivo, resposta) sem chegar perto do teto do plano.
+export const maxDuration = 55;
+
 // Só extrai e devolve os dados — não grava nada no banco. A gravação
 // definitiva acontece em /api/abastecimentos, depois que o motorista
 // confere/edita o que veio daqui.

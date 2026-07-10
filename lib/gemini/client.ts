@@ -20,10 +20,30 @@ export function getGeminiClient(): GoogleGenerativeAI {
   return client;
 }
 
-// Modelo com visão, usado no OCR do comprovante (Fase 4). Free tier: até ~1.500 leituras/dia.
-// "gemini-flash-latest" é um alias mantido pelo Google que sempre aponta pro
-// Flash atual — usar um nome de versão fixo (ex: "gemini-1.5-flash") quebra
-// quando o modelo é descontinuado (já aconteceu uma vez neste projeto).
-export function getGeminiFlashModel(generationConfig?: GenerationConfig) {
-  return getGeminiClient().getGenerativeModel({ model: "gemini-flash-latest", generationConfig });
+// Modelo com visão, usado no OCR do comprovante (Fase 4).
+//
+// Decisão revista em 2026-07-10 (ver PROJETO.md): até aqui o projeto usava
+// só "gemini-flash-latest" (alias mantido pelo Google, historicamente
+// preferido a um nome fixo porque nome fixo quebra — 404 — quando
+// descontinuado). Só que o alias já trocou de comportamento 2x este ano
+// (Fase 4: 404 quando o modelo por trás foi descontinuado; 2026-07-08:
+// passou a fazer "thinking" pesado sem aviso; 2026-07-10: confirmado
+// apontando pro Gemini 3.5 Flash, um modelo "frontier" mais pesado, com
+// respostas de até 79s e 503 "high demand" recorrente) — o alias deixou de
+// ser a opção estável.
+//
+// Testado direto contra a API (2026-07-10): na MESMA foto real de
+// comprovante, "gemini-2.5-flash" (nome estável, não é snapshot datado tipo
+// "-001" — esses têm cota ZERO no free tier deste projeto, confirmado via
+// 429 "limit: 0") extraiu todos os campos essenciais corretos (litros,
+// valor_total, valor_litro) em ~9s; "gemini-flash-latest" falhou 5 de 5
+// vezes na mesma sessão (503 ou lentidão extrema). Modelo fixo agora é o
+// principal; o alias volta como FALLBACK só se o principal um dia for
+// descontinuado de verdade (404) — ver `chamarGeminiComFallbackDeModelo` em
+// lib/ocr/gemini-provider.ts.
+export const MODELO_FLASH_PRINCIPAL = "gemini-2.5-flash";
+export const MODELO_FLASH_FALLBACK = "gemini-flash-latest";
+
+export function getGeminiFlashModel(generationConfig?: GenerationConfig, modelo: string = MODELO_FLASH_PRINCIPAL) {
+  return getGeminiClient().getGenerativeModel({ model: modelo, generationConfig });
 }
