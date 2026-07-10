@@ -14,6 +14,15 @@ const CINZA_CLARO: [number, number, number] = [248, 250, 252];
 const CINZA_TEXTO: [number, number, number] = [51, 65, 85];
 const PRETO: [number, number, number] = [20, 20, 20];
 
+// As 3 fotos da captura guiada (Bloco 5), cada uma opcional — bomba/
+// hodômetro são fotos opcionais desde o Bloco 1, então nem toda linha tem
+// as 3.
+export interface FotosLinhaPdf {
+  cupom?: FotoBaixada;
+  bomba?: FotoBaixada;
+  hodometro?: FotoBaixada;
+}
+
 // `fotos` é indexado pela posição do registro no array (não por id) — mais
 // simples do que inventar uma chave sintética só pra esse mapeamento local
 // entre a tabela e as miniaturas desenhadas em cima dela.
@@ -21,7 +30,7 @@ export function gerarPdf(
   cabecalho: CabecalhoExport,
   registros: RegistroExport[],
   resumo: ResumoExport,
-  fotos: Map<number, FotoBaixada>,
+  fotos: Map<number, FotosLinhaPdf>,
   // Só presente no export de dentro da aba de um ônibus específico — ver
   // mesma observação em lib/export/excel.ts.
   medias?: EstatisticasVeiculo
@@ -129,29 +138,37 @@ export function gerarPdf(
     // dentro da largura da coluna, então "cortado" aqui seria só ficar
     // estreito demais pra ler, não perda de dado).
     columnStyles: {
-      0: { cellWidth: 12 }, // Foto
+      0: { cellWidth: 20 }, // Fotos (cupom + bomba + hodômetro lado a lado)
       10: { cellWidth: 30 }, // Posto
       12: { cellWidth: 40 }, // Alertas
     },
     didDrawCell: (dados) => {
       if (dados.section !== "body" || dados.column.index !== 0) return;
-      const foto = fotos.get(dados.row.index);
-      if (!foto || !foto.formatoPdf) return;
-      try {
-        doc.addImage(
-          foto.buffer.toString("base64"),
-          foto.formatoPdf,
-          dados.cell.x + 1,
-          dados.cell.y + 1,
-          10,
-          8,
-          undefined,
-          "FAST"
-        );
-      } catch {
-        // Foto corrompida/formato inesperado — deixa a célula em branco em
-        // vez de derrubar o relatório inteiro por causa de uma miniatura.
-      }
+      const linha = fotos.get(dados.row.index);
+      if (!linha) return;
+
+      // 3 miniaturas lado a lado, cada uma ~6mm de largura — a coluna é
+      // estreita demais pra rótulo (esse já existe na tela do escritório,
+      // ver components/escritorio/foto-comprovante.tsx); aqui é só indicar
+      // visualmente que a foto existe.
+      [linha.cupom, linha.bomba, linha.hodometro].forEach((foto, indice) => {
+        if (!foto || !foto.formatoPdf) return;
+        try {
+          doc.addImage(
+            foto.buffer.toString("base64"),
+            foto.formatoPdf,
+            dados.cell.x + 1 + indice * 6,
+            dados.cell.y + 1,
+            5.5,
+            8,
+            undefined,
+            "FAST"
+          );
+        } catch {
+          // Foto corrompida/formato inesperado — deixa aquela miniatura em
+          // branco em vez de derrubar o relatório inteiro por causa disso.
+        }
+      });
     },
   });
 

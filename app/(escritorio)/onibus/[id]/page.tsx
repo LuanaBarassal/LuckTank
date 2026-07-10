@@ -30,6 +30,19 @@ const LIMITE_TABELA = 50;
 type NivelAlerta = "info" | "atencao" | "critico";
 const PRIORIDADE_NIVEL: Record<NivelAlerta, number> = { info: 0, atencao: 1, critico: 2 };
 
+// Quais tipo_regra destacam qual foto (Bloco 5) — bomba diverge do cupom
+// destaca a foto da BOMBA (o cupom já é o "esperado" contra o qual ela é
+// comparada); hodômetro diverge do confirmado destaca a foto do HODÔMETRO.
+const TIPOS_REGRA_DIVERGENCIA = new Set([
+  "divergencia_bomba_cupom_litros",
+  "divergencia_bomba_cupom_valor",
+  "km_hodometro_diverge_do_confirmado",
+]);
+const TIPOS_REGRA_DIVERGENCIA_BOMBA = new Set([
+  "divergencia_bomba_cupom_litros",
+  "divergencia_bomba_cupom_valor",
+]);
+
 export default async function VeiculoDetalhePage({
   params,
   searchParams,
@@ -95,40 +108,53 @@ export default async function VeiculoDetalhePage({
   // Nível mais alto de alerta por abastecimento — um registro pode ter mais
   // de um alerta (ex.: capacidade do tanque + consumo fora da faixa juntos,
   // ver lib/validacao/regras.ts); a linha na tabela usa o mais grave dos dois.
+  // `tipo_regra` também vem junto (Bloco 5) pra saber QUAIS fotos destacar
+  // com o alerta de divergência (bomba×cupom, hodômetro×confirmado).
   const idsAbastecimentos = (abastecimentos ?? []).map((a) => a.id);
   const { data: alertasDosAbastecimentos } = idsAbastecimentos.length
     ? await supabase
         .from("alertas")
-        .select("entidade_id, nivel")
+        .select("entidade_id, nivel, tipo_regra")
         .eq("entidade_tipo", "abastecimento")
         .in("entidade_id", idsAbastecimentos)
-    : { data: [] as { entidade_id: string; nivel: string }[] };
+    : { data: [] as { entidade_id: string; nivel: string; tipo_regra: string }[] };
 
   const mapaNivelAlerta = new Map<string, NivelAlerta>();
+  const mapaTiposDivergencia = new Map<string, Set<string>>();
   for (const alerta of alertasDosAbastecimentos ?? []) {
     const nivel = alerta.nivel as NivelAlerta;
     const atual = mapaNivelAlerta.get(alerta.entidade_id);
     if (!atual || PRIORIDADE_NIVEL[nivel] > PRIORIDADE_NIVEL[atual]) {
       mapaNivelAlerta.set(alerta.entidade_id, nivel);
     }
+    if (TIPOS_REGRA_DIVERGENCIA.has(alerta.tipo_regra)) {
+      const tipos = mapaTiposDivergencia.get(alerta.entidade_id) ?? new Set();
+      tipos.add(alerta.tipo_regra);
+      mapaTiposDivergencia.set(alerta.entidade_id, tipos);
+    }
   }
 
-  // Uma foto por abastecimento na prática (o wizard só permite uma) — se um
-  // dia existir mais de uma linha em `midias` pro mesmo abastecimento, fica
-  // valendo a mais recente (a query já não teria ordem garantida sem isso).
+  // As 3 fotos da captura guiada (Bloco 1) — uma linha por tipo em `midias`,
+  // não mais uma só. Se um dia existir mais de uma linha do MESMO tipo pro
+  // mesmo abastecimento, fica valendo a mais recente (mesmo critério de
+  // antes, agora aplicado por tipo).
   const { data: midiasDosAbastecimentos } = idsAbastecimentos.length
     ? await supabase
         .from("midias")
-        .select("id, entidade_id, criado_em")
+        .select("id, entidade_id, tipo, criado_em")
         .eq("entidade_tipo", "abastecimento")
-        .eq("tipo", "foto_comprovante")
+        .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
         .in("entidade_id", idsAbastecimentos)
         .order("criado_em", { ascending: false })
-    : { data: [] as { id: string; entidade_id: string; criado_em: string }[] };
+    : { data: [] as { id: string; entidade_id: string; tipo: string; criado_em: string }[] };
 
-  const mapaMidiaId = new Map<string, string>();
+  const mapaMidiasPorTipo = new Map<string, { cupom?: string; bomba?: string; hodometro?: string }>();
   for (const midia of midiasDosAbastecimentos ?? []) {
-    if (!mapaMidiaId.has(midia.entidade_id)) mapaMidiaId.set(midia.entidade_id, midia.id);
+    const atual = mapaMidiasPorTipo.get(midia.entidade_id) ?? {};
+    if (midia.tipo === "foto_comprovante" && !atual.cupom) atual.cupom = midia.id;
+    else if (midia.tipo === "foto_bomba" && !atual.bomba) atual.bomba = midia.id;
+    else if (midia.tipo === "foto_hodometro" && !atual.hodometro) atual.hodometro = midia.id;
+    mapaMidiasPorTipo.set(midia.entidade_id, atual);
   }
 
   const podeEditar = usuario.papel === "gerente" || usuario.papel === "administrador";
@@ -260,7 +286,14 @@ export default async function VeiculoDetalhePage({
                 {abastecimentos.map((a) => {
                   const nivel = mapaNivelAlerta.get(a.id);
                   const valorPorLitro = a.litros > 0 ? a.valor_total / a.litros : null;
-                  const midiaId = mapaMidiaId.get(a.id);
+                  const midias = mapaMidiasPorTipo.get(a.id) ?? {};
+                  const tiposDivergencia = mapaTiposDivergencia.get(a.id);
+                  const bombaDivergente = Boolean(
+                    tiposDivergencia && [...tiposDivergencia].some((t) => TIPOS_REGRA_DIVERGENCIA_BOMBA.has(t))
+                  );
+                  const hodometroDivergente = Boolean(
+                    tiposDivergencia?.has("km_hodometro_diverge_do_confirmado")
+                  );
                   return (
                     <tr
                       key={a.id}
@@ -271,7 +304,27 @@ export default async function VeiculoDetalhePage({
                       )}
                     >
                       <td className="py-3.5 pr-5">
-                        {midiaId ? <FotoComprovante midiaId={midiaId} /> : <span className="text-slate-600">—</span>}
+                        <div className="flex gap-2">
+                          {midias.cupom ? (
+                            <FotoComprovante midiaId={midias.cupom} rotulo="Cupom" />
+                          ) : (
+                            <FotoAusente rotulo="Cupom" />
+                          )}
+                          {midias.bomba ? (
+                            <FotoComprovante midiaId={midias.bomba} rotulo="Bomba" destaque={bombaDivergente} />
+                          ) : (
+                            <FotoAusente rotulo="Bomba" />
+                          )}
+                          {midias.hodometro ? (
+                            <FotoComprovante
+                              midiaId={midias.hodometro}
+                              rotulo="Hodôm."
+                              destaque={hodometroDivergente}
+                            />
+                          ) : (
+                            <FotoAusente rotulo="Hodôm." />
+                          )}
+                        </div>
                       </td>
                       <td
                         className={cn(
@@ -452,6 +505,20 @@ function CardComparativoConsumo({ comparativo }: { comparativo: ComparativoConsu
         {ROTULO_STATUS_COMPARATIVO[status]}
         {desvioPercentual != null && ` (${desvioPercentual > 0 ? "+" : ""}${desvioPercentual}%)`}
       </span>
+    </div>
+  );
+}
+
+// Mesmo layout (miniatura + rótulo) de FotoComprovante, só que sem foto —
+// mantém as 3 colunas de foto alinhadas entre linhas mesmo quando bomba/
+// hodômetro não foram tiradas (Bloco 1, sempre opcionais).
+function FotoAusente({ rotulo }: { rotulo: string }) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-navy-800 text-slate-700">
+        —
+      </div>
+      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">{rotulo}</span>
     </div>
   );
 }

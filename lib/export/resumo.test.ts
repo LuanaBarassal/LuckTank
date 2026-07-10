@@ -17,7 +17,9 @@ function registro(parcial: Partial<RegistroExport>): RegistroExport {
     postoCidade: "Campinas",
     numeroNota: "123",
     alertas: [],
-    fotoUrl: null,
+    fotoCupomUrl: null,
+    fotoBombaUrl: null,
+    fotoHodometroUrl: null,
     ...parcial,
   };
 }

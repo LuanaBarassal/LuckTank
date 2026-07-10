@@ -1,6 +1,6 @@
 // Formato intermediário entre a query (route handler) e os geradores de
 // arquivo (excel.ts/pdf.ts) — mesmo padrão do resto do projeto (a página
-// busca o dado bruto, uma função separada transforma). `fotoUrl`, quando
+// busca o dado bruto, uma função separada transforma). `foto*Url`, quando
 // presente, já é a URL ABSOLUTA de /api/midias/[id] (nunca a do Storage
 // direto — o bucket é privado desde a 0007, só essa rota autenticada serve
 // o arquivo).
@@ -19,7 +19,11 @@ export interface RegistroExport {
   postoCidade: string | null;
   numeroNota: string | null;
   alertas: string[];
-  fotoUrl: string | null;
+  // Captura guiada de 3 fotos (Bloco 5) — cada uma opcional (bomba/hodômetro
+  // são fotos opcionais desde o Bloco 1).
+  fotoCupomUrl: string | null;
+  fotoBombaUrl: string | null;
+  fotoHodometroUrl: string | null;
 }
 
 export interface ResumoExport {

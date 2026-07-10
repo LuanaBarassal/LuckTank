@@ -35,7 +35,9 @@ const COLUNAS = [
   { key: "cidade", width: 18 },
   { key: "nota", width: 14 },
   { key: "alertas", width: 44 },
-  { key: "foto", width: 12 },
+  { key: "fotoCupom", width: 12 },
+  { key: "fotoBomba", width: 12 },
+  { key: "fotoHodometro", width: 14 },
 ] as const;
 
 const TITULOS_TABELA = [
@@ -52,7 +54,9 @@ const TITULOS_TABELA = [
   "Cidade",
   "Nº nota",
   "Alertas",
-  "Foto",
+  "Foto Cupom",
+  "Foto Bomba",
+  "Foto Hodômetro",
 ];
 
 const NUM_COLUNAS = COLUNAS.length;
@@ -163,7 +167,9 @@ export async function gerarExcel(
       cidade: r.postoCidade ?? "",
       nota: r.numeroNota ?? "",
       alertas: r.alertas.join(", "),
-      foto: r.fotoUrl ? "Ver foto" : "—",
+      fotoCupom: r.fotoCupomUrl ? "Ver foto" : "—",
+      fotoBomba: r.fotoBombaUrl ? "Ver foto" : "—",
+      fotoHodometro: r.fotoHodometroUrl ? "Ver foto" : "—",
     });
 
     row.getCell("total").numFmt = FORMATO_MOEDA;
@@ -175,12 +181,17 @@ export async function gerarExcel(
     row.getCell("alertas").alignment = { wrapText: true, vertical: "top" };
     row.getCell("posto").alignment = { wrapText: true, vertical: "top" };
 
-    // Link clicável — célula separada (não embutida em texto de outra
-    // coluna), como pedido: quem abre o Excel clica em "Ver foto" e vai
-    // direto pra rota autenticada que serve a imagem.
-    if (r.fotoUrl) {
-      const cell = row.getCell("foto");
-      cell.value = { text: "Ver foto", hyperlink: r.fotoUrl };
+    // Link clicável — célula separada por foto (não embutido em texto de
+    // outra coluna), como pedido: quem abre o Excel clica em "Ver foto" e
+    // vai direto pra rota autenticada que serve a imagem certa.
+    for (const [chave, url] of [
+      ["fotoCupom", r.fotoCupomUrl],
+      ["fotoBomba", r.fotoBombaUrl],
+      ["fotoHodometro", r.fotoHodometroUrl],
+    ] as const) {
+      if (!url) continue;
+      const cell = row.getCell(chave);
+      cell.value = { text: "Ver foto", hyperlink: url };
       cell.font = { color: { argb: CYAN_ESCURO }, underline: true };
     }
 

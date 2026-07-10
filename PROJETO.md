@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-10 (3 fotos guiadas — Bloco 4: conferência cruzada anti-fraude bomba×cupom e hodômetro×KM confirmado).
+Última atualização: 2026-07-10 (3 fotos guiadas — Bloco 5: escritório vê as 3 fotos com destaque de divergência; export Excel/PDF inclui as 3. Fecha a feature completa).
 
 ## Visão do produto
 
@@ -2705,6 +2705,66 @@ concordam entre si são prova difícil de forjar.
 - **Pendências explícitas pro Bloco 5**: escritório ainda não exibe as 3
   fotos separadamente (miniaturas rotuladas cupom/bomba/hodômetro) nem
   destaca os alertas de divergência; export ainda não inclui as 3 fotos.
+
+### Bloco 5 — Escritório vê as 3 fotos (2026-07-10, fecha a captura guiada de 3 fotos)
+
+- ✅ **`components/escritorio/foto-comprovante.tsx` ganhou `rotulo` e
+  `destaque`** (props opcionais, comportamento antigo preservado sem
+  elas): `rotulo` mostra um texto pequeno abaixo da miniatura ("Cupom"/
+  "Bomba"/"Hodôm."); `destaque` desenha uma borda âmbar + "⚠" quando
+  aquela foto especificamente está envolvida num alerta de divergência
+  (Bloco 4) — o escritório vê de relance QUAL das 3 fotos motivou a
+  suspeita, sem precisar caçar isso no painel de Alertas separado.
+- ✅ **`app/(escritorio)/onibus/[id]/page.tsx`**: a query de `midias`
+  passou a buscar os 3 tipos (`foto_comprovante`/`foto_bomba`/
+  `foto_hodometro`, antes só o primeiro), montando um mapa por
+  abastecimento com as 3 (cada uma opcional). A query de `alertas` ganhou
+  `tipo_regra` (antes só `nivel`) — usado pra decidir destaque: bomba
+  diverge (litros OU valor) destaca a foto da BOMBA, hodômetro diverge
+  destaca a foto do HODÔMETRO. Novo componente `FotoAusente` (mesmo
+  layout miniatura+rótulo, sem foto) mantém as 3 colunas alinhadas entre
+  linhas quando bomba/hodômetro não foram tiradas.
+- ✅ **Export Excel** (`lib/export/excel.ts`): coluna única "Foto" virou
+  3 — "Foto Cupom"/"Foto Bomba"/"Foto Hodômetro", cada uma com seu
+  próprio link clicável "Ver foto" (célula separada, mesmo padrão de
+  sempre) quando a foto existe.
+- ✅ **Export PDF** (`lib/export/pdf.ts`): a coluna "Foto" (12mm) virou
+  "Fotos" (20mm) com até 3 miniaturas pequenas lado a lado (~5.5mm cada)
+  — a coluna é estreita demais pra rótulo de texto (isso já existe na
+  tela do escritório), aqui é só indicar visualmente que a foto existe;
+  cada miniatura falha silenciosamente se corrompida, sem derrubar o
+  relatório inteiro (mesmo padrão de antes).
+- ✅ **`app/api/export/route.ts`**: query de `midias` e a montagem de
+  `RegistroExport` passaram a resolver as 3 URLs
+  (`fotoCupomUrl`/`fotoBombaUrl`/`fotoHodometroUrl`, antes só uma
+  `fotoUrl`); no caminho PDF, baixa as 3 fotos em paralelo por linha
+  (cada uma opcional) em vez de uma só.
+- **Decisão de escopo, não incluída neste bloco**: o export em ZIP
+  (`/api/export/fotos`) continua baixando só o cupom — não foi pedido
+  explicitamente ("miniatura no PDF/link no Excel", ZIP não mencionado),
+  e mudar isso teria implicações de nomenclatura de arquivo (hoje 1
+  arquivo por abastecimento, precisaria virar 3 com sufixo por tipo) que
+  não foram pedidas. Fica registrado caso vire pedido futuro.
+- **Validado**: `tsc`, `lint`, `test` (130/130) e `build` limpos.
+  **No navegador** (login real como administrador de teste, veículo e 3
+  abastecimentos reais criados via endpoint, removidos depois): (1)
+  registro com cupom+bomba+hodômetro concordando → 3 miniaturas normais,
+  sem destaque, sem badge de alerta; (2) registro com bomba/hodômetro
+  DIVERGINDO do confirmado → **bomba e hodômetro apareceram com borda
+  âmbar + "⚠"** exatamente como esperado (confirmado também via query
+  direta: os 3 `tipo_regra` de divergência gravados pra esse
+  abastecimento); (3) registro só com cupom → bomba/hodômetro mostraram
+  o placeholder "—" corretamente, sem erro. Export Excel e PDF clicados
+  de verdade (com PIN configurado pro teste) — os dois confirmados `200`
+  no log de rede, cobrindo os 3 cenários de foto na mesma exportação.
+  Achado incidental (não é bug, confirma comportamento existente): dois
+  dos registros de teste reusaram o MESMO arquivo de cupom (artefato do
+  script de teste), disparando `foto_comprovante_duplicada` (crítico) —
+  confirma que a regra de duplicidade (com o filtro por `tipo` corrigido
+  no Bloco 1) continua funcionando corretamente mesmo com múltiplos tipos
+  de foto coexistindo. Todo dado de teste (empresa, veículo, usuário,
+  abastecimentos, mídias, arquivos de Storage) removido depois,
+  confirmado por query independente.
 
 ## Regras invariantes (não podem quebrar)
 

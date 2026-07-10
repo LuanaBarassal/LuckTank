@@ -8,8 +8,22 @@
 // pra detalhe do isolamento por tenant).
 
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
 
-export default function FotoComprovante({ midiaId }: { midiaId: string }) {
+interface Props {
+  midiaId: string;
+  // Rótulo da foto (captura guiada de 3 fotos, Bloco 5) — "Cupom"/"Bomba"/
+  // "Hodômetro". Opcional: sem ele, o componente se comporta como antes
+  // (usado em qualquer lugar que só tenha uma foto genérica).
+  rotulo?: string;
+  // Realça a miniatura (borda/anel âmbar) quando essa foto especificamente
+  // está envolvida num alerta de divergência (Bloco 4) — ajuda o escritório
+  // a ver de relance QUAL das 3 fotos motivou a suspeita, sem precisar
+  // caçar isso no painel de Alertas separado.
+  destaque?: boolean;
+}
+
+export default function FotoComprovante({ midiaId, rotulo, destaque }: Props) {
   const [aberto, setAberto] = useState(false);
   const urlVisualizacao = `/api/midias/${midiaId}`;
   const urlDownload = `/api/midias/${midiaId}?baixar=1`;
@@ -25,15 +39,32 @@ export default function FotoComprovante({ midiaId }: { midiaId: string }) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setAberto(true)}
-        className="block h-12 w-12 overflow-hidden rounded-lg border border-navy-800 transition hover:border-cyan-600"
-        aria-label="Ver foto do comprovante"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element -- vem de rota autenticada nossa, não de storage otimizável pelo next/image */}
-        <img src={urlVisualizacao} alt="Miniatura do comprovante" className="h-full w-full object-cover" />
-      </button>
+      <div className="flex flex-col items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setAberto(true)}
+          className={cn(
+            "block h-12 w-12 overflow-hidden rounded-lg border transition hover:border-cyan-600",
+            destaque ? "border-2 border-atencao-500" : "border-navy-800"
+          )}
+          aria-label={rotulo ? `Ver foto: ${rotulo}` : "Ver foto do comprovante"}
+          title={destaque ? `${rotulo ?? "Foto"} — envolvida num alerta de divergência` : rotulo}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- vem de rota autenticada nossa, não de storage otimizável pelo next/image */}
+          <img src={urlVisualizacao} alt="Miniatura do comprovante" className="h-full w-full object-cover" />
+        </button>
+        {rotulo && (
+          <span
+            className={cn(
+              "text-[10px] font-medium uppercase tracking-wide",
+              destaque ? "text-atencao-400" : "text-slate-500"
+            )}
+          >
+            {rotulo}
+            {destaque && " ⚠"}
+          </span>
+        )}
+      </div>
 
       {aberto && (
         <div
@@ -44,6 +75,7 @@ export default function FotoComprovante({ midiaId }: { midiaId: string }) {
             className="flex max-h-full max-w-2xl flex-col gap-3"
             onClick={(evento) => evento.stopPropagation()}
           >
+            {rotulo && <p className="text-center text-sm font-semibold text-white">{rotulo}</p>}
             {/* eslint-disable-next-line @next/next/no-img-element -- mesma rota autenticada acima, só em tamanho grande */}
             <img
               src={urlVisualizacao}

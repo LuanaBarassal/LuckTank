@@ -11,9 +11,9 @@ import {
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
 import { formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { ROTULO_REGRA } from "@/lib/validacao/rotulos";
-import { baixarFotoComprovante, type FotoBaixada } from "@/lib/midias";
+import { baixarFotoComprovante } from "@/lib/midias";
 import { gerarExcel } from "@/lib/export/excel";
-import { gerarPdf } from "@/lib/export/pdf";
+import { gerarPdf, type FotosLinhaPdf } from "@/lib/export/pdf";
 import { calcularResumoExport } from "@/lib/export/resumo";
 import { gerarNomeArquivoExport } from "@/lib/export/nome-arquivo";
 import type { CabecalhoExport, RegistroExport } from "@/lib/export/tipos";
@@ -87,12 +87,14 @@ export async function GET(request: NextRequest) {
     idsAbastecimentos.length
       ? supabase
           .from("midias")
-          .select("id, entidade_id, url, criado_em")
+          .select("id, entidade_id, tipo, url, criado_em")
           .eq("entidade_tipo", "abastecimento")
-          .eq("tipo", "foto_comprovante")
+          .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
           .in("entidade_id", idsAbastecimentos)
           .order("criado_em", { ascending: false })
-      : Promise.resolve({ data: [] as { id: string; entidade_id: string; url: string; criado_em: string }[] }),
+      : Promise.resolve({
+          data: [] as { id: string; entidade_id: string; tipo: string; url: string; criado_em: string }[],
+        }),
   ]);
 
   const mapaAlertas = new Map<string, string[]>();
@@ -102,16 +104,25 @@ export async function GET(request: NextRequest) {
     mapaAlertas.set(alerta.entidade_id, atual);
   }
 
-  // Uma foto por abastecimento na prática — se houver mais de uma linha,
-  // fica valendo a mais recente (mesmo critério do Bloco 3).
-  const mapaMidia = new Map<string, { id: string; url: string }>();
+  // As 3 fotos da captura guiada (Bloco 5) — uma linha por tipo; se houver
+  // mais de uma do MESMO tipo, fica valendo a mais recente (mesmo critério
+  // de sempre, agora aplicado por tipo).
+  const mapaMidias = new Map<
+    string,
+    { cupom?: { id: string; url: string }; bomba?: { id: string; url: string }; hodometro?: { id: string; url: string } }
+  >();
   for (const midia of midiasBrutas ?? []) {
-    if (!mapaMidia.has(midia.entidade_id)) mapaMidia.set(midia.entidade_id, { id: midia.id, url: midia.url });
+    const atual = mapaMidias.get(midia.entidade_id) ?? {};
+    if (midia.tipo === "foto_comprovante" && !atual.cupom) atual.cupom = { id: midia.id, url: midia.url };
+    else if (midia.tipo === "foto_bomba" && !atual.bomba) atual.bomba = { id: midia.id, url: midia.url };
+    else if (midia.tipo === "foto_hodometro" && !atual.hodometro)
+      atual.hodometro = { id: midia.id, url: midia.url };
+    mapaMidias.set(midia.entidade_id, atual);
   }
 
   const origem = request.nextUrl.origin;
   const registros: RegistroExport[] = lista.map((a) => {
-    const midia = mapaMidia.get(a.id);
+    const midias = mapaMidias.get(a.id);
     return {
       data: a.data_abastecimento,
       veiculoPlaca: mapaPlacas.get(a.veiculo_id) ?? "—",
@@ -127,7 +138,9 @@ export async function GET(request: NextRequest) {
       postoCidade: a.posto_cidade,
       numeroNota: a.numero_nota,
       alertas: mapaAlertas.get(a.id) ?? [],
-      fotoUrl: midia ? `${origem}/api/midias/${midia.id}` : null,
+      fotoCupomUrl: midias?.cupom ? `${origem}/api/midias/${midias.cupom.id}` : null,
+      fotoBombaUrl: midias?.bomba ? `${origem}/api/midias/${midias.bomba.id}` : null,
+      fotoHodometroUrl: midias?.hodometro ? `${origem}/api/midias/${midias.hodometro.id}` : null,
     };
   });
 
@@ -173,17 +186,26 @@ export async function GET(request: NextRequest) {
     : gerarNomeArquivoExport([cabecalho.empresaNome], periodo, formato);
 
   if (formato === "pdf") {
-    // Só baixa os bytes das fotos quando o formato é PDF (o Excel só usa um
+    // Só baixa os bytes das fotos quando o formato é PDF (o Excel só usa
     // link, não precisa do arquivo em si) — evita download desnecessário no
-    // caminho mais comum de export.
+    // caminho mais comum de export. As 3 fotos (Bloco 5) baixam em paralelo
+    // por linha, cada uma opcional.
     const admin = createAdminClient();
-    const fotos = new Map<number, FotoBaixada>();
+    const fotos = new Map<number, FotosLinhaPdf>();
     await Promise.all(
       lista.map(async (a, indice) => {
-        const midia = mapaMidia.get(a.id);
-        if (!midia) return;
-        const foto = await baixarFotoComprovante(admin, midia.url);
-        if (foto) fotos.set(indice, foto);
+        const midias = mapaMidias.get(a.id);
+        if (!midias) return;
+        const [cupom, bomba, hodometro] = await Promise.all([
+          midias.cupom ? baixarFotoComprovante(admin, midias.cupom.url) : null,
+          midias.bomba ? baixarFotoComprovante(admin, midias.bomba.url) : null,
+          midias.hodometro ? baixarFotoComprovante(admin, midias.hodometro.url) : null,
+        ]);
+        const linha: FotosLinhaPdf = {};
+        if (cupom) linha.cupom = cupom;
+        if (bomba) linha.bomba = bomba;
+        if (hodometro) linha.hodometro = hodometro;
+        if (cupom || bomba || hodometro) fotos.set(indice, linha);
       })
     );
 
