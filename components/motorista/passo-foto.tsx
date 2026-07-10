@@ -4,19 +4,31 @@ import { useRef, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
+  titulo: string;
+  instrucao: string;
+  numero: number;
+  total: number;
   preview: string | null;
   mensagemErro?: string | null;
+  obrigatoria?: boolean;
   onFotoChange: (file: File | null) => void;
   onVoltar: () => void;
   onContinuar: () => void;
+  onPular?: () => void;
 }
 
 export default function PassoFoto({
+  titulo,
+  instrucao,
+  numero,
+  total,
   preview,
   mensagemErro,
+  obrigatoria = true,
   onFotoChange,
   onVoltar,
   onContinuar,
+  onPular,
 }: Props) {
   const inputCameraRef = useRef<HTMLInputElement>(null);
   const inputGaleriaRef = useRef<HTMLInputElement>(null);
@@ -30,10 +42,13 @@ export default function PassoFoto({
 
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold text-neutral-900">Foto do comprovante</h2>
-      <p className="text-sm text-neutral-500">
-        Tire uma foto legível do cupom/nota do abastecimento, ou escolha uma da galeria.
-      </p>
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+          Foto {numero} de {total}
+        </p>
+        <h2 className="text-lg font-semibold text-neutral-900">{titulo}</h2>
+      </div>
+      <p className="text-sm text-neutral-500">{instrucao}</p>
 
       {mensagemErro && (
         <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
@@ -64,7 +79,7 @@ export default function PassoFoto({
         // eslint-disable-next-line @next/next/no-img-element -- pré-visualização local (blob:), não passa por next/image
         <img
           src={preview}
-          alt="Comprovante capturado"
+          alt={titulo}
           className="max-h-80 w-full rounded-xl border border-neutral-200 object-contain"
         />
       ) : (
@@ -111,6 +126,16 @@ export default function PassoFoto({
           Continuar
         </Button>
       </div>
+
+      {!obrigatoria && !preview && onPular && (
+        <button
+          type="button"
+          onClick={onPular}
+          className="text-center text-sm font-medium text-neutral-500 underline underline-offset-2"
+        >
+          Pular esta foto
+        </button>
+      )}
     </div>
   );
 }

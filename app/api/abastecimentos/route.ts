@@ -47,6 +47,70 @@ function extensaoSeguraFoto(mimeType: string): string {
   return "bin";
 }
 
+interface FotoProcessada {
+  url: string;
+  hash: string;
+  exifTimestamp: string | null;
+  exifGps: { lat: number; lon: number } | null;
+}
+
+// Captura guiada de 3 fotos (cupom/bomba/hodômetro, 2026-07-10): mesma
+// validação/hash/EXIF/upload que o cupom já usava, agora reaproveitada pras
+// 3. Cupom é obrigatório (preserva o comportamento de sempre — arquivo
+// inválido barra o registro com 400); bomba/hodômetro são evidência
+// complementar opcional — arquivo ausente OU inválido nelas NUNCA bloqueia o
+// registro, só resulta em "sem foto" pra aquela etapa (mesmo espírito do
+// invariante #7: prova a mais é bônus, nunca trava o motorista).
+async function processarFoto(params: {
+  formData: FormData;
+  campoFoto: string;
+  campoExif: string;
+  admin: ReturnType<typeof createAdminClient>;
+  caminhoBase: string;
+  obrigatoria: boolean;
+}): Promise<{ ok: true; dados: FotoProcessada | null } | { ok: false; erro: string }> {
+  const { formData, campoFoto, campoExif, admin, caminhoBase, obrigatoria } = params;
+  const foto = formData.get(campoFoto);
+
+  if (!(foto instanceof File) || foto.size === 0) {
+    return { ok: true, dados: null };
+  }
+
+  const buffer = Buffer.from(await foto.arrayBuffer());
+  const validacao = validarFoto(foto, buffer);
+  if (!validacao.valido) {
+    if (obrigatoria) return { ok: false, erro: validacao.erro ?? "Foto inválida." };
+    return { ok: true, dados: null };
+  }
+
+  const hash = createHash("sha256").update(buffer).digest("hex");
+
+  // Mesmo truque do cupom: o "cabeçalho" do arquivo ORIGINAL (sem
+  // recodificar) preserva o EXIF que a compressão via canvas apaga; sem
+  // esse campo, cai no fallback de tentar ler do próprio arquivo comprimido.
+  const fotoExifCampo = formData.get(campoExif);
+  const bufferParaExif =
+    fotoExifCampo instanceof File && fotoExifCampo.size > 0
+      ? Buffer.from(await fotoExifCampo.arrayBuffer())
+      : buffer;
+  const exif = await extrairExifFoto(bufferParaExif);
+
+  const caminho = `${caminhoBase}.${extensaoSeguraFoto(foto.type)}`;
+  const { error: uploadError } = await admin.storage
+    .from("comprovantes")
+    .upload(caminho, buffer, { contentType: foto.type || "image/jpeg", upsert: true });
+
+  // Falha de upload não bloqueia o registro (mesmo comportamento de sempre
+  // pro cupom) — só resulta em "sem foto" pra essa etapa.
+  if (uploadError) return { ok: true, dados: null };
+
+  const { data: publicUrlData } = admin.storage.from("comprovantes").getPublicUrl(caminho);
+  return {
+    ok: true,
+    dados: { url: publicUrlData.publicUrl, hash, exifTimestamp: exif.timestamp, exifGps: exif.gps },
+  };
+}
+
 // Único ponto de escrita de abastecimento. O motorista não tem sessão, então
 // tudo aqui roda com a service role — por isso a validação de negócio (KM,
 // resolução de veículo/empresa a partir do qr_token) precisa acontecer
@@ -152,56 +216,60 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Motorista inválido." }, { status: 400 });
   }
 
-  let fotoUrl: string | null = null;
-  let fotoHash: string | null = null;
-  let exifTimestamp: string | null = null;
-  let exifGps: { lat: number; lon: number } | null = null;
-  const foto = formData.get("foto");
+  // `registro_uuid` (já validado como UUID pelo schema) + sufixo por tipo +
+  // extensão de uma lista fechada — NUNCA `foto.name` (achado numa auditoria
+  // adversarial: é o nome de arquivo declarado pelo client num FormData,
+  // então totalmente controlável por quem chama este endpoint sem sessão
+  // nenhuma; ia direto pra dentro da key do Storage e, mais adiante, pro
+  // header Content-Disposition em /api/midias/[id] — um jeito de injetar
+  // caracteres arbitrários num header HTTP a partir de um campo que nunca
+  // devia ser confiável).
+  const caminhoBase = (sufixo: string) =>
+    `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}-${sufixo}`;
 
-  if (foto instanceof File && foto.size > 0) {
-    const buffer = Buffer.from(await foto.arrayBuffer());
-
-    const validacaoFoto = validarFoto(foto, buffer);
-    if (!validacaoFoto.valido) {
-      return NextResponse.json({ error: validacaoFoto.erro }, { status: 400 });
-    }
-
-    fotoHash = createHash("sha256").update(buffer).digest("hex");
-
-    // A foto que vai pro Storage já chega comprimida pelo client (canvas),
-    // o que apaga todo o EXIF — por isso o client manda também só o
-    // "cabeçalho" do arquivo ORIGINAL (poucos KB, sem recodificar, onde o
-    // EXIF de um JPEG mora), usado exclusivamente pra esta leitura e nunca
-    // salvo em Storage. Sem esse campo (ex.: reenvio da fila offline), cai
-    // no fallback de tentar ler do próprio `foto` — normalmente sem
-    // metadado, mas não custa nada tentar.
-    const fotoExifCampo = formData.get("foto_exif");
-    const bufferParaExif =
-      fotoExifCampo instanceof File && fotoExifCampo.size > 0
-        ? Buffer.from(await fotoExifCampo.arrayBuffer())
-        : buffer;
-    const exif = await extrairExifFoto(bufferParaExif);
-    exifTimestamp = exif.timestamp;
-    exifGps = exif.gps;
-
-    // `registro_uuid` (já validado como UUID pelo schema) + extensão de uma
-    // lista fechada — NUNCA `foto.name` (achado numa auditoria adversarial:
-    // é o nome de arquivo declarado pelo client num FormData, então
-    // totalmente controlável por quem chama este endpoint sem sessão nenhuma;
-    // ia direto pra dentro da key do Storage e, mais adiante, pro header
-    // Content-Disposition em /api/midias/[id] — um jeito de injetar caracteres
-    // arbitrários num header HTTP a partir de um campo que nunca devia ser
-    // confiável).
-    const caminho = `${veiculo.empresa_id}/${veiculo.id}/${parsed.data.registro_uuid}.${extensaoSeguraFoto(foto.type)}`;
-    const { error: uploadError } = await admin.storage
-      .from("comprovantes")
-      .upload(caminho, buffer, { contentType: foto.type || "image/jpeg", upsert: true });
-
-    if (!uploadError) {
-      const { data: publicUrlData } = admin.storage.from("comprovantes").getPublicUrl(caminho);
-      fotoUrl = publicUrlData.publicUrl;
-    }
+  const resultadoCupom = await processarFoto({
+    formData,
+    campoFoto: "foto_cupom",
+    campoExif: "foto_cupom_exif",
+    admin,
+    caminhoBase: caminhoBase("cupom"),
+    obrigatoria: true,
+  });
+  if (!resultadoCupom.ok) {
+    return NextResponse.json({ error: resultadoCupom.erro }, { status: 400 });
   }
+  const resultadoBomba = await processarFoto({
+    formData,
+    campoFoto: "foto_bomba",
+    campoExif: "foto_bomba_exif",
+    admin,
+    caminhoBase: caminhoBase("bomba"),
+    obrigatoria: false,
+  });
+  if (!resultadoBomba.ok) {
+    return NextResponse.json({ error: resultadoBomba.erro }, { status: 400 });
+  }
+  const resultadoHodometro = await processarFoto({
+    formData,
+    campoFoto: "foto_hodometro",
+    campoExif: "foto_hodometro_exif",
+    admin,
+    caminhoBase: caminhoBase("hodometro"),
+    obrigatoria: false,
+  });
+  if (!resultadoHodometro.ok) {
+    return NextResponse.json({ error: resultadoHodometro.erro }, { status: 400 });
+  }
+
+  const fotoCupom = resultadoCupom.dados;
+  const fotoBomba = resultadoBomba.dados;
+  const fotoHodometro = resultadoHodometro.dados;
+  // As regras de fraude (nota duplicada, foto reaproveitada, EXIF antigo)
+  // continuam olhando só pro cupom — é o documento fiscal, o mesmo padrão
+  // de sempre; bomba/hodômetro são evidência complementar de conferência
+  // cruzada (Bloco 4), não entram nessas regras específicas.
+  const fotoHash = fotoCupom?.hash ?? null;
+  const exifTimestamp = fotoCupom?.exifTimestamp ?? null;
 
   const { data: abastecimento, error: insertError } = await admin
     .from("abastecimentos")
@@ -270,17 +338,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (fotoUrl) {
-    await admin.from("midias").insert({
+  const midiasParaGravar = [
+    fotoCupom && {
       empresa_id: veiculo.empresa_id,
       entidade_tipo: "abastecimento",
       entidade_id: abastecimento.id,
-      url: fotoUrl,
+      url: fotoCupom.url,
       tipo: "foto_comprovante",
-      hash_sha256: fotoHash,
-      exif_timestamp: exifTimestamp,
-      exif_gps: exifGps as Json,
-    });
+      hash_sha256: fotoCupom.hash,
+      exif_timestamp: fotoCupom.exifTimestamp,
+      exif_gps: fotoCupom.exifGps as Json,
+    },
+    fotoBomba && {
+      empresa_id: veiculo.empresa_id,
+      entidade_tipo: "abastecimento",
+      entidade_id: abastecimento.id,
+      url: fotoBomba.url,
+      tipo: "foto_bomba",
+      hash_sha256: fotoBomba.hash,
+      exif_timestamp: fotoBomba.exifTimestamp,
+      exif_gps: fotoBomba.exifGps as Json,
+    },
+    fotoHodometro && {
+      empresa_id: veiculo.empresa_id,
+      entidade_tipo: "abastecimento",
+      entidade_id: abastecimento.id,
+      url: fotoHodometro.url,
+      tipo: "foto_hodometro",
+      hash_sha256: fotoHodometro.hash,
+      exif_timestamp: fotoHodometro.exifTimestamp,
+      exif_gps: fotoHodometro.exifGps as Json,
+    },
+  ].filter((m): m is NonNullable<typeof m> => Boolean(m));
+
+  if (midiasParaGravar.length > 0) {
+    await admin.from("midias").insert(midiasParaGravar);
   }
 
   // Alerta é bônus informativo pro escritório — nunca deve derrubar a
@@ -339,11 +431,18 @@ async function avaliarEGravarAlertas(params: {
 
   let fotoDuplicada = false;
   if (fotoHash) {
+    // Filtra por tipo "foto_comprovante" (não só entidade_tipo): desde a
+    // captura guiada de 3 fotos (2026-07-10), midias também guarda bomba e
+    // hodômetro com hash próprio — sem esse filtro, um hash batendo entre
+    // tipos diferentes (coincidência praticamente impossível de qualquer
+    // forma, mas a intenção da regra é clara) contaminaria uma regra que é
+    // especificamente sobre o CUPOM ser reaproveitado.
     const { data: midiasComMesmoHash } = await admin
       .from("midias")
       .select("entidade_id")
       .eq("hash_sha256", fotoHash)
       .eq("entidade_tipo", "abastecimento")
+      .eq("tipo", "foto_comprovante")
       .neq("entidade_id", abastecimento.id);
 
     if (midiasComMesmoHash && midiasComMesmoHash.length > 0) {

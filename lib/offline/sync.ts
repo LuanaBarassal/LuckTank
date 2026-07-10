@@ -8,10 +8,29 @@ function construirFormData(item: ItemFila): FormData {
     formData.set(chave, valor);
   }
   if (item.fotoBlob) {
-    formData.set("foto", item.fotoBlob, item.fotoNome ?? "comprovante.jpg");
+    formData.set("foto_cupom", item.fotoBlob, item.fotoNome ?? "comprovante.jpg");
   }
   if (item.fotoExifHeaderBlob) {
-    formData.set("foto_exif", item.fotoExifHeaderBlob, item.fotoNome ?? "comprovante.jpg");
+    formData.set("foto_cupom_exif", item.fotoExifHeaderBlob, item.fotoNome ?? "comprovante.jpg");
+  }
+  // Bomba/hodômetro são opcionais no item (itens enfileirados antes deste
+  // recurso existir nunca terão essas chaves — `undefined`, tratado igual a
+  // "não fotografou essa etapa").
+  if (item.fotoBombaBlob) {
+    formData.set("foto_bomba", item.fotoBombaBlob, item.fotoBombaNome ?? "bomba.jpg");
+  }
+  if (item.fotoBombaExifHeaderBlob) {
+    formData.set("foto_bomba_exif", item.fotoBombaExifHeaderBlob, item.fotoBombaNome ?? "bomba.jpg");
+  }
+  if (item.fotoHodometroBlob) {
+    formData.set("foto_hodometro", item.fotoHodometroBlob, item.fotoHodometroNome ?? "hodometro.jpg");
+  }
+  if (item.fotoHodometroExifHeaderBlob) {
+    formData.set(
+      "foto_hodometro_exif",
+      item.fotoHodometroExifHeaderBlob,
+      item.fotoHodometroNome ?? "hodometro.jpg"
+    );
   }
   return formData;
 }

@@ -14,6 +14,18 @@ export interface ItemFila {
   // comprimida (canvas apaga todo o metadado). Pequeno o bastante pra não
   // pesar na cota do IndexedDB.
   fotoExifHeaderBlob: Blob | null;
+  // Fotos de bomba/hodômetro (captura guiada de 3 fotos, 2026-07-10) — campos
+  // NOVOS e opcionais de propósito: um item já enfileirado no IndexedDB de um
+  // motorista ANTES deste deploy não tem essas chaves (viram `undefined`, não
+  // erro), e ainda sincroniza normal só com a foto do cupom, exatamente como
+  // antes. Nunca renomear os campos acima (fotoBlob/fotoNome/fotoExifHeaderBlob)
+  // por causa disso.
+  fotoBombaBlob?: Blob | null;
+  fotoBombaNome?: string | null;
+  fotoBombaExifHeaderBlob?: Blob | null;
+  fotoHodometroBlob?: Blob | null;
+  fotoHodometroNome?: string | null;
+  fotoHodometroExifHeaderBlob?: Blob | null;
   criadoEm: number;
   status: "pendente" | "erro";
   erro: string | null;

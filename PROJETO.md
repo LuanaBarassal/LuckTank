@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-10 (diagnóstico e correção do OCR: timeout/retry diferenciado e troca do alias `gemini-flash-latest` por modelo fixo `gemini-2.5-flash`, com evidência real).
+Última atualização: 2026-07-10 (3 fotos guiadas — cupom/bomba/hodômetro — Bloco 1: captura; conferência cruzada vem nos próximos blocos).
 
 ## Visão do produto
 
@@ -2418,6 +2418,106 @@ primeira tentativa (log `[ocr-diagnostico]` confirma `"modelo":
 e o retry com backoff em 503/429 real — ambos exigiriam forçar
 artificialmente essas condições (não reproduzido nesta sessão; a lógica foi
 revisada por leitura, não por execução real desses ramos específicos).
+
+## Três fotos (cupom + bomba + hodômetro) com conferência cruzada — Bloco 1 (2026-07-10)
+
+Pedido do usuário: em vez de só a foto do cupom, guiar o motorista a fotografar
+também o visor da bomba e o hodômetro, pra o sistema **conferir uma foto
+contra a outra** (bomba × cupom, hodômetro × KM confirmado) — o valor
+anti-fraude está no cruzamento, fotos que concordam entre si são prova difícil
+de forjar. Pedido em 5 blocos; este registro cobre só o **Bloco 1 — captura
+guiada**. Blocos 2-5 (Gemini lendo bomba/hodômetro, KM auto-preenchido,
+regras de divergência, exibição no escritório) ficam para as próximas sessões.
+
+- ✅ **Wizard do motorista virou 1 foto por vez, com progresso claro.**
+  `components/motorista/passo-foto.tsx` generalizado (título/instrução/
+  número/total via props, em vez de texto fixo de cupom) — reaproveitado nas
+  3 etapas, cada uma com o rótulo "Foto X de 3" e instrução específica:
+  cupom ("Tire uma foto legível do cupom..."), bomba ("Fotografe o visor da
+  bomba mostrando litros e valor"), hodômetro ("Fotografe o painel/hodômetro
+  mostrando o KM atual"). `components/motorista/fluxo-abastecimento.tsx`:
+  `Passo` ganhou `"foto-cupom" | "foto-bomba" | "foto-hodometro"` no lugar do
+  antigo `"foto"` único; sequência nome → foto-cupom (com OCR, como já era) →
+  foto-bomba → foto-hodometro → formulário. Indicador de progresso (3
+  segmentos) trocou o rótulo "Foto" por "Fotos" (plural), sem adicionar
+  segmentos novos — o "Foto X de 3" fica dentro do próprio card, não na barra
+  superior.
+- ✅ **Bomba e hodômetro são opcionais, cupom continua obrigatório.** As duas
+  etapas novas têm botão "Pular esta foto" (`obrigatoria={false}` em
+  `PassoFoto`) — motorista sem ângulo bom pro visor da bomba ou hodômetro
+  quebrado não fica travado. Cupom não ganhou esse botão (`obrigatoria` não
+  passada, default `true`, mantém o comportamento de sempre: Continuar só
+  habilita com uma foto selecionada). Nenhuma das 3 é OCR'd ainda neste
+  bloco — bomba/hodômetro só são capturadas e enviadas; a leitura por IA
+  entra no Bloco 2.
+- ✅ **Câmera + galeria nas 3 fotos** (mesmo padrão do cupom desde o Bloco 2
+  de melhorias de uso) — a defesa continua sendo hash SHA-256 + EXIF, não
+  a origem do arquivo.
+- ✅ **`app/api/abastecimentos/route.ts` aceita 3 fotos.** Campos multipart
+  renomeados: `foto` → `foto_cupom`/`foto_cupom_exif` (nome antigo não
+  mantido como alias — client e servidor mudaram juntos neste mesmo commit,
+  sem consumidor externo do endpoint), mais `foto_bomba`/`foto_bomba_exif` e
+  `foto_hodometro`/`foto_hodometro_exif`. Nova função `processarFoto()`
+  reaproveita a MESMA validação/hash/EXIF/upload que o cupom já usava
+  (nenhuma lógica duplicada) — recebe um flag `obrigatoria`: cupom inválido
+  barra com 400 (comportamento de sempre); bomba/hodômetro ausente OU
+  inválida nunca bloqueia o registro, só resulta em "sem foto" pra aquela
+  etapa (mesmo espírito do invariante #7 — prova a mais é bônus, nunca
+  trava o motorista). Cada foto grava sua própria linha em `midias` com
+  `tipo`: `foto_comprovante` (cupom, nome mantido — não renomeado, para não
+  quebrar o painel/export que já filtram por esse valor), `foto_bomba`,
+  `foto_hodometro`. **Nenhuma migration nova** — `midias.tipo` já era texto
+  livre sem CHECK constraint desde a `0001_init.sql`.
+- ✅ **Achado e corrigido durante este bloco**: a regra de "foto duplicada"
+  (`avaliarFotoDuplicada`, motor de fraude) comparava hash sem filtrar por
+  `tipo` — inofensivo enquanto só existia um tipo de foto, mas passaria a
+  comparar hashes entre tipos diferentes (cupom vs. bomba vs. hodômetro)
+  assim que a captura de 3 fotos existisse. Adicionado `.eq("tipo",
+  "foto_comprovante")` na query — a regra continua sendo especificamente
+  "o CUPOM foi reaproveitado", não uma mistura de tipos.
+- ✅ **Fila offline estendida sem quebrar itens já enfileirados.** `ItemFila`
+  (`lib/offline/db.ts`) ganhou `fotoBombaBlob`/`fotoBombaExifHeaderBlob`/
+  `fotoBombaNome` e os 3 equivalentes de hodômetro, todos **opcionais** —
+  os campos antigos (`fotoBlob`/`fotoExifHeaderBlob`/`fotoNome`, agora
+  implicitamente "cupom") NÃO foram renomeados de propósito: um item já
+  salvo no IndexedDB do celular de um motorista real, de antes deste deploy,
+  não tem as chaves novas (viram `undefined`) e continua sincronizando
+  normalmente só com a foto do cupom, sem erro. `lib/offline/sync.ts`
+  (`construirFormData`) envia os 3 pares de campo com os novos nomes
+  multipart, cada bomba/hodômetro só se presente.
+- **Validado**: `tsc`, `lint`, `test` (116/116) e `build` limpos.
+  **Ponta a ponta contra o endpoint real** (script Node, veículo
+  descartável): envio com as 3 fotos reais (cupom + 2 fotos de outros
+  cupons reaproveitadas só pra testar o pipeline de bomba/hodômetro, já
+  que ainda não há OCR pra elas neste bloco) confirmou os 3 registros em
+  `midias` com `tipo` correto, hash distinto e path distinto
+  (`.../registro_uuid-cupom.jpg`, `-bomba.jpg`, `-hodometro.jpg`); envio só
+  com cupom (sem bomba/hodômetro) confirmou que o comportamento antigo
+  continua idêntico. **No navegador, contra build de produção** (`next
+  build` + `next start` — `next dev` foi descartado pro teste porque a CSP
+  bloqueia o `eval()` do Fast Refresh e quebra a hidratação, mascarando
+  TODA interação como se estivesse travada; achado um Service Worker
+  antigo (`lucktank-v2`, de uma sessão de dev anterior) também interferindo,
+  limpo antes do teste real — mesma classe de armadilha já registrada na
+  Fase 8 Bloco 1): fluxo completo clicado de verdade (seleção de motorista,
+  captura de foto via `File`/`DataTransfer` sintético — seletor de arquivo
+  nativo do SO não é automatizável, mesma limitação já documentada em
+  blocos anteriores), 2 tentativas de OCR falhando de propósito (imagem
+  sintética sem dado de cupom real) confirmando o fallback pro manual,
+  "Pular esta foto" em bomba e hodômetro levando corretamente a "Foto 2 de
+  3" → "Foto 3 de 3" → formulário, bloqueio de KM confirmado (tentativa com
+  KM igual ao último registrado barrada na hora, mensagem certa), e envio
+  final confirmado no banco: `abastecimento` gravado com os valores
+  manuais, `midias` com só `foto_comprovante` (bomba/hodômetro
+  corretamente ausentes por terem sido puladas). Todo o dado de teste
+  (2 empresas, veículos, motorista, abastecimentos, mídias e arquivos de
+  Storage) removido depois, confirmado por query independente.
+- **Pendências explícitas pro Bloco 2 em diante**: Gemini ainda não lê
+  bomba/hodômetro (fotos só são capturadas/guardadas); KM não é
+  auto-preenchido a partir do hodômetro; nenhuma regra de divergência
+  bomba×cupom ou hodômetro×KM existe ainda; escritório ainda não exibe as
+  3 fotos separadamente (herda a exibição genérica de `midias` que já
+  existia).
 
 ## Regras invariantes (não podem quebrar)
 

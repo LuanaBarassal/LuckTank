@@ -43,7 +43,14 @@ interface Props {
   ultimoAbastecimento: UltimoAbastecimento | null;
 }
 
-type Passo = "nome" | "foto" | "processando" | "formulario" | "sucesso";
+type Passo =
+  | "nome"
+  | "foto-cupom"
+  | "processando"
+  | "foto-bomba"
+  | "foto-hodometro"
+  | "formulario"
+  | "sucesso";
 
 interface MetaOcr {
   confianca: OcrConfianca;
@@ -113,6 +120,10 @@ export default function FluxoAbastecimento({
 
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [fotoBombaFile, setFotoBombaFile] = useState<File | null>(null);
+  const [fotoBombaPreview, setFotoBombaPreview] = useState<string | null>(null);
+  const [fotoHodometroFile, setFotoHodometroFile] = useState<File | null>(null);
+  const [fotoHodometroPreview, setFotoHodometroPreview] = useState<string | null>(null);
   const [erroFoto, setErroFoto] = useState<string | null>(null);
   const [tentativasOcr, setTentativasOcr] = useState(0);
   const [ocrMeta, setOcrMeta] = useState<MetaOcr | null>(null);
@@ -133,12 +144,31 @@ export default function FluxoAbastecimento({
     }
   }, [estaOnline]);
 
-  function handleFotoChange(file: File | null) {
-    setFotoFile(file);
-    setFotoPreview((antigo) => {
+  // Compartilhado pelas 3 fotos — só troca qual par (file, preview) é
+  // atualizado. `URL.revokeObjectURL` evita vazar memória do preview antigo
+  // quando o motorista troca de foto antes de confirmar.
+  function trocarFoto(
+    file: File | null,
+    setFile: (f: File | null) => void,
+    setPreview: (atualizar: (antigo: string | null) => string | null) => void
+  ) {
+    setFile(file);
+    setPreview((antigo) => {
       if (antigo) URL.revokeObjectURL(antigo);
       return file ? URL.createObjectURL(file) : null;
     });
+  }
+
+  function handleFotoChange(file: File | null) {
+    trocarFoto(file, setFotoFile, setFotoPreview);
+  }
+
+  function handleFotoBombaChange(file: File | null) {
+    trocarFoto(file, setFotoBombaFile, setFotoBombaPreview);
+  }
+
+  function handleFotoHodometroChange(file: File | null) {
+    trocarFoto(file, setFotoHodometroFile, setFotoHodometroPreview);
   }
 
   function handleChangeFormulario<K extends keyof ValoresFormulario>(campo: K, valor: string) {
@@ -151,6 +181,8 @@ export default function FluxoAbastecimento({
     setUsarNomeLivre(motoristas.length === 0);
     setNomeLivre("");
     handleFotoChange(null);
+    handleFotoBombaChange(null);
+    handleFotoHodometroChange(null);
     setErroFoto(null);
     setTentativasOcr(0);
     setOcrMeta(null);
@@ -164,15 +196,16 @@ export default function FluxoAbastecimento({
   async function handleContinuarFoto() {
     if (!fotoFile) return;
 
-    // Sem conexão: a IA não tem como rodar (chama o Gemini), então pula
-    // direto pro preenchimento manual — nada de tentar e falhar por rede.
+    // Sem conexão: a IA não tem como rodar (chama o Gemini), então pula a
+    // leitura automática — mas ainda guia a captura das fotos de bomba e
+    // hodômetro (só a leitura por IA é que fica pra depois, quando sincronizar).
     if (!estaOnline) {
       setOcrMeta(null);
       setAvisoFormulario(
         "Sem internet — preencha os dados manualmente. Enviaremos quando a conexão voltar."
       );
       setErroFoto(null);
-      setPasso("formulario");
+      setPasso("foto-bomba");
       return;
     }
 
@@ -232,7 +265,7 @@ export default function FluxoAbastecimento({
           "Conferimos os dados automaticamente — revise antes de confirmar."
         );
         setErroFoto(null);
-        setPasso("formulario");
+        setPasso("foto-bomba");
         return;
       }
 
@@ -250,13 +283,31 @@ export default function FluxoAbastecimento({
           "Não conseguimos ler o comprovante. Tire outra foto, com mais luz e a nota inteira no quadro."
         );
         handleFotoChange(null);
-        setPasso("foto");
+        setPasso("foto-cupom");
       } else {
         setOcrMeta(null);
         setAvisoFormulario("Não foi possível ler automaticamente — preencha os dados manualmente.");
-        setPasso("formulario");
+        setPasso("foto-bomba");
       }
     }
+  }
+
+  function handleContinuarFotoBomba() {
+    setPasso("foto-hodometro");
+  }
+
+  function handlePularFotoBomba() {
+    handleFotoBombaChange(null);
+    setPasso("foto-hodometro");
+  }
+
+  function handleContinuarFotoHodometro() {
+    setPasso("formulario");
+  }
+
+  function handlePularFotoHodometro() {
+    handleFotoHodometroChange(null);
+    setPasso("formulario");
   }
 
   async function handleSubmit() {
@@ -304,15 +355,32 @@ export default function FluxoAbastecimento({
     const formData = new FormData();
     formData.set("qr_token", qrToken);
     for (const [chave, valor] of Object.entries(campos)) formData.set(chave, valor);
+    // Mesma compressão do caminho offline (lib/offline/comprimir-imagem.ts)
+    // — antes só o offline reduzia o tamanho antes de subir a foto. As 3
+    // fotos seguem o mesmo padrão: comprimida vai pro Storage,
+    // "cabeçalho" do arquivo ORIGINAL (sem recodificar) vai só pra leitura
+    // de EXIF no servidor.
     if (fotoFile) {
-      // Mesma compressão do caminho offline (lib/offline/comprimir-imagem.ts)
-      // — antes só o offline reduzia o tamanho antes de subir a foto.
       const fotoComprimida = await comprimirImagem(fotoFile);
-      formData.set("foto", fotoComprimida, fotoFile.name);
+      formData.set("foto_cupom", fotoComprimida, fotoFile.name);
+      formData.set("foto_cupom_exif", fotoFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES), fotoFile.name);
+    }
+    if (fotoBombaFile) {
+      const fotoComprimida = await comprimirImagem(fotoBombaFile);
+      formData.set("foto_bomba", fotoComprimida, fotoBombaFile.name);
       formData.set(
-        "foto_exif",
-        fotoFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES),
-        fotoFile.name
+        "foto_bomba_exif",
+        fotoBombaFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES),
+        fotoBombaFile.name
+      );
+    }
+    if (fotoHodometroFile) {
+      const fotoComprimida = await comprimirImagem(fotoHodometroFile);
+      formData.set("foto_hodometro", fotoComprimida, fotoHodometroFile.name);
+      formData.set(
+        "foto_hodometro_exif",
+        fotoHodometroFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES),
+        fotoHodometroFile.name
       );
     }
 
@@ -338,6 +406,14 @@ export default function FluxoAbastecimento({
       try {
         const fotoBlob = fotoFile ? await comprimirImagem(fotoFile) : null;
         const fotoExifHeaderBlob = fotoFile ? fotoFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES) : null;
+        const fotoBombaBlob = fotoBombaFile ? await comprimirImagem(fotoBombaFile) : null;
+        const fotoBombaExifHeaderBlob = fotoBombaFile
+          ? fotoBombaFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
+          : null;
+        const fotoHodometroBlob = fotoHodometroFile ? await comprimirImagem(fotoHodometroFile) : null;
+        const fotoHodometroExifHeaderBlob = fotoHodometroFile
+          ? fotoHodometroFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
+          : null;
         await adicionarNaFila({
           registroUuid,
           qrToken,
@@ -345,6 +421,12 @@ export default function FluxoAbastecimento({
           fotoBlob,
           fotoExifHeaderBlob,
           fotoNome: fotoFile?.name ?? null,
+          fotoBombaBlob,
+          fotoBombaExifHeaderBlob,
+          fotoBombaNome: fotoBombaFile?.name ?? null,
+          fotoHodometroBlob,
+          fotoHodometroExifHeaderBlob,
+          fotoHodometroNome: fotoHodometroFile?.name ?? null,
           criadoEm: Date.now(),
           status: "pendente",
           erro: null,
@@ -409,12 +491,16 @@ export default function FluxoAbastecimento({
               }}
               onUsarNomeLivre={() => setUsarNomeLivre(true)}
               onNomeLivreChange={setNomeLivre}
-              onContinuar={() => setPasso("foto")}
+              onContinuar={() => setPasso("foto-cupom")}
             />
           )}
 
-          {passo === "foto" && (
+          {passo === "foto-cupom" && (
             <PassoFoto
+              titulo="Foto do comprovante"
+              instrucao="Tire uma foto legível do cupom/nota do abastecimento, ou escolha uma da galeria."
+              numero={1}
+              total={3}
               preview={fotoPreview}
               mensagemErro={erroFoto}
               onFotoChange={handleFotoChange}
@@ -425,6 +511,36 @@ export default function FluxoAbastecimento({
 
           {passo === "processando" && <PassoProcessando />}
 
+          {passo === "foto-bomba" && (
+            <PassoFoto
+              titulo="Visor da bomba"
+              instrucao="Fotografe o visor da bomba mostrando litros e valor."
+              numero={2}
+              total={3}
+              obrigatoria={false}
+              preview={fotoBombaPreview}
+              onFotoChange={handleFotoBombaChange}
+              onVoltar={() => setPasso("foto-cupom")}
+              onContinuar={handleContinuarFotoBomba}
+              onPular={handlePularFotoBomba}
+            />
+          )}
+
+          {passo === "foto-hodometro" && (
+            <PassoFoto
+              titulo="Hodômetro"
+              instrucao="Fotografe o painel/hodômetro mostrando o KM atual."
+              numero={3}
+              total={3}
+              obrigatoria={false}
+              preview={fotoHodometroPreview}
+              onFotoChange={handleFotoHodometroChange}
+              onVoltar={() => setPasso("foto-bomba")}
+              onContinuar={handleContinuarFotoHodometro}
+              onPular={handlePularFotoHodometro}
+            />
+          )}
+
           {passo === "formulario" && (
             <PassoFormulario
               valores={valores}
@@ -433,7 +549,7 @@ export default function FluxoAbastecimento({
               erro={erro}
               aviso={avisoFormulario}
               enviando={enviando}
-              onVoltar={() => setPasso("foto")}
+              onVoltar={() => setPasso("foto-hodometro")}
               onSubmit={handleSubmit}
             />
           )}
@@ -450,7 +566,7 @@ export default function FluxoAbastecimento({
 
 const PASSOS_VISIVEIS: { chave: Passo[]; label: string }[] = [
   { chave: ["nome"], label: "Nome" },
-  { chave: ["foto", "processando"], label: "Foto" },
+  { chave: ["foto-cupom", "processando", "foto-bomba", "foto-hodometro"], label: "Fotos" },
   { chave: ["formulario"], label: "Dados" },
 ];
 
