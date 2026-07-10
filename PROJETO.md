@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-10 (3 fotos guiadas — Bloco 5: escritório vê as 3 fotos com destaque de divergência; export Excel/PDF inclui as 3. Fecha a feature completa).
+Última atualização: 2026-07-10 (reordena as 3 fotos guiadas — bomba → cupom → hodômetro — e atualiza o passo a passo impresso na etiqueta do veículo).
 
 ## Visão do produto
 
@@ -2765,6 +2765,45 @@ concordam entre si são prova difícil de forjar.
   de foto coexistindo. Todo dado de teste (empresa, veículo, usuário,
   abastecimentos, mídias, arquivos de Storage) removido depois,
   confirmado por query independente.
+
+### Reordenar as 3 fotos + atualizar etiqueta impressa (2026-07-10)
+
+Pedido do usuário: a ordem certa da captura guiada é **bomba → cupom →
+hodômetro** (não cupom → bomba → hodômetro, como saiu no Bloco 1), e o
+passo a passo impresso na etiqueta do veículo precisa refletir isso.
+
+- ✅ **`components/motorista/fluxo-abastecimento.tsx` reordenado**: a
+  sequência virou nome → **foto-bomba** ("Foto 1 de 3") → **foto-cupom**
+  ("Foto 2 de 3", com OCR e retry, comportamento inalterado) →
+  **foto-hodometro** ("Foto 3 de 3") → formulário. Todos os alvos de
+  navegação ajustados: `onContinuar`/`onPular` da bomba agora levam pro
+  cupom (antes iam pro hodômetro); sucesso, falha final e caminho offline
+  do cupom agora levam pro hodômetro (antes iam pra bomba); `onVoltar` de
+  cada etapa ajustado pra apontar pra etapa anterior certa na nova ordem
+  (bomba→nome, cupom→bomba, hodômetro→cupom, formulário→hodômetro,
+  inalterado). A legenda "Lemos da bomba: X L · R$ Y" mudou de lugar
+  também — antes aparecia na etapa do hodômetro (quando bomba vinha antes
+  dele), agora aparece na etapa do CUPOM (que é quem vem logo depois da
+  bomba na nova ordem).
+- ✅ **`components/escritorio/instrucoes-motorista.tsx` (texto impresso na
+  etiqueta) estava desatualizado desde o Bloco 1** — ainda descrevia o
+  fluxo antigo de UMA foto só, sem nenhuma menção a bomba/hodômetro.
+  Reescrito do zero pra espelhar o fluxo real de 7 telas, na ordem certa:
+  escanear QR → nome → **visor da bomba** (com nota "ou pule") → **cupom**
+  → **hodômetro** (com nota "ou pule") → conferir/confirmar KM → confirmar
+  abastecimento.
+- **Validado no navegador** (build de produção, veículo descartável):
+  fluxo completo clicado na nova ordem — "Foto 1 de 3 — Visor da bomba"
+  primeiro, "Voltar" a partir do cupom retorna corretamente pra bomba,
+  "Foto 2 de 3 — Foto do comprovante" depois (com retry de OCR
+  funcionando igual), "Foto 3 de 3 — Hodômetro" por último, "Voltar" a
+  partir do hodômetro retorna corretamente pro cupom, chegada limpa no
+  formulário. Etiqueta impressa conferida logado como administrador de
+  teste: os 7 passos aparecem na ordem nova (bomba → cupom → hodômetro),
+  cada um com a nota "ou pule" nas 2 fotos opcionais. Dado de teste
+  (empresa, veículo, usuário, abastecimento) removido depois, confirmado
+  por query independente. `tsc`, `lint`, `test` (130/130) e `build`
+  limpos.
 
 ## Regras invariantes (não podem quebrar)
 

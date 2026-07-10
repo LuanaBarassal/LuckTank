@@ -1,14 +1,18 @@
 // Passo a passo impresso junto do QR do veículo (etiqueta) — texto gerado a
 // partir do fluxo real do motorista (components/motorista/fluxo-abastecimento.tsx
 // e os passos PassoNome/PassoFoto/PassoFormulario), não inventado: são
-// exatamente as 5 telas que o motorista vê, na ordem em que aparecem.
+// exatamente as telas que o motorista vê, na ordem em que aparecem — captura
+// guiada de 3 fotos (visor da bomba → cupom → hodômetro), bomba e hodômetro
+// podem ser puladas se não der pra fotografar.
 // Preto sobre branco de propósito (alto contraste em impressora comum, P&B
 // inclusive) — não usa nenhuma cor semântica que dependa de tinta colorida.
 const PASSOS = [
   "Escaneie o QR Code — ele abre o sistema de abastecimento, sem senha.",
   'Toque no seu nome na lista (ou em "Meu nome não está na lista" e digite).',
-  "Tire uma foto do comprovante/cupom do abastecimento, ou escolha uma da galeria.",
-  "Confira os dados preenchidos automaticamente (ou preencha à mão) e informe o KM atual do veículo.",
+  "Fotografe o visor da bomba mostrando litros e valor (ou pule, se não der pra fotografar).",
+  "Tire uma foto legível do comprovante/cupom do abastecimento, ou escolha uma da galeria.",
+  "Fotografe o painel/hodômetro mostrando o KM atual (ou pule, se não der pra fotografar).",
+  "Confira os dados preenchidos automaticamente (ou preencha à mão) e confirme o KM atual do veículo.",
   'Toque em "Confirmar abastecimento". Pronto — o registro já chega ao escritório.',
 ];
 

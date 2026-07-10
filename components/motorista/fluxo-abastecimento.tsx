@@ -210,15 +210,15 @@ export default function FluxoAbastecimento({
     if (!fotoFile) return;
 
     // Sem conexão: a IA não tem como rodar (chama o Gemini), então pula a
-    // leitura automática — mas ainda guia a captura das fotos de bomba e
-    // hodômetro (só a leitura por IA é que fica pra depois, quando sincronizar).
+    // leitura automática — mas ainda guia a captura da foto do hodômetro
+    // (só a leitura por IA é que fica pra depois, quando sincronizar).
     if (!estaOnline) {
       setOcrMeta(null);
       setAvisoFormulario(
         "Sem internet — preencha os dados manualmente. Enviaremos quando a conexão voltar."
       );
       setErroFoto(null);
-      setPasso("foto-bomba");
+      setPasso("foto-hodometro");
       return;
     }
 
@@ -279,7 +279,7 @@ export default function FluxoAbastecimento({
           "Conferimos os dados automaticamente — revise antes de confirmar."
         );
         setErroFoto(null);
-        setPasso("foto-bomba");
+        setPasso("foto-hodometro");
         return;
       }
 
@@ -301,7 +301,7 @@ export default function FluxoAbastecimento({
       } else {
         setOcrMeta(null);
         setAvisoFormulario("Não foi possível ler automaticamente — preencha os dados manualmente.");
-        setPasso("foto-bomba");
+        setPasso("foto-hodometro");
       }
     }
   }
@@ -339,13 +339,13 @@ export default function FluxoAbastecimento({
     } else {
       setBombaOcrResultado(null);
     }
-    setPasso("foto-hodometro");
+    setPasso("foto-cupom");
   }
 
   function handlePularFotoBomba() {
     handleFotoBombaChange(null);
     setBombaOcrResultado(null);
-    setPasso("foto-hodometro");
+    setPasso("foto-cupom");
   }
 
   async function handleContinuarFotoHodometro() {
@@ -572,7 +572,7 @@ export default function FluxoAbastecimento({
               }}
               onUsarNomeLivre={() => setUsarNomeLivre(true)}
               onNomeLivreChange={setNomeLivre}
-              onContinuar={() => setPasso("foto-cupom")}
+              onContinuar={() => setPasso("foto-bomba")}
             />
           )}
 
@@ -580,12 +580,19 @@ export default function FluxoAbastecimento({
             <PassoFoto
               titulo="Foto do comprovante"
               instrucao="Tire uma foto legível do cupom/nota do abastecimento, ou escolha uma da galeria."
-              numero={1}
+              numero={2}
               total={3}
               preview={fotoPreview}
               mensagemErro={erroFoto}
+              mensagemInfo={
+                bombaOcrResultado?.dados
+                  ? `Lemos da bomba: ${bombaOcrResultado.dados.litros ?? "?"} L · R$ ${
+                      bombaOcrResultado.dados.valor_total?.toFixed(2) ?? "?"
+                    }`
+                  : null
+              }
               onFotoChange={handleFotoChange}
-              onVoltar={() => setPasso("nome")}
+              onVoltar={() => setPasso("foto-bomba")}
               onContinuar={handleContinuarFoto}
             />
           )}
@@ -611,12 +618,12 @@ export default function FluxoAbastecimento({
             <PassoFoto
               titulo="Visor da bomba"
               instrucao="Fotografe o visor da bomba mostrando litros e valor."
-              numero={2}
+              numero={1}
               total={3}
               obrigatoria={false}
               preview={fotoBombaPreview}
               onFotoChange={handleFotoBombaChange}
-              onVoltar={() => setPasso("foto-cupom")}
+              onVoltar={() => setPasso("nome")}
               onContinuar={handleContinuarFotoBomba}
               onPular={handlePularFotoBomba}
             />
@@ -630,15 +637,8 @@ export default function FluxoAbastecimento({
               total={3}
               obrigatoria={false}
               preview={fotoHodometroPreview}
-              mensagemInfo={
-                bombaOcrResultado?.dados
-                  ? `Lemos da bomba: ${bombaOcrResultado.dados.litros ?? "?"} L · R$ ${
-                      bombaOcrResultado.dados.valor_total?.toFixed(2) ?? "?"
-                    }`
-                  : null
-              }
               onFotoChange={handleFotoHodometroChange}
-              onVoltar={() => setPasso("foto-bomba")}
+              onVoltar={() => setPasso("foto-cupom")}
               onContinuar={handleContinuarFotoHodometro}
               onPular={handlePularFotoHodometro}
             />
