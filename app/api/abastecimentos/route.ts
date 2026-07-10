@@ -176,6 +176,9 @@ export async function POST(request: NextRequest) {
     ocr_prompt_version: campoTexto(formData, "ocr_prompt_version"),
     ocr_raw: campoTexto(formData, "ocr_raw"),
     campos_editados_manualmente: campoTexto(formData, "campos_editados_manualmente"),
+    bomba_litros_lido: campoTexto(formData, "bomba_litros_lido"),
+    bomba_valor_total_lido: campoTexto(formData, "bomba_valor_total_lido"),
+    hodometro_km_lido: campoTexto(formData, "hodometro_km_lido"),
   });
 
   if (!parsed.success) {
@@ -301,8 +304,13 @@ export async function POST(request: NextRequest) {
       campos_editados_manualmente: parsearJsonSeguro<string[]>(
         parsed.data.campos_editados_manualmente ?? undefined
       ),
+      bomba_litros_lido: parsed.data.bomba_litros_lido,
+      bomba_valor_total_lido: parsed.data.bomba_valor_total_lido,
+      hodometro_km_lido: parsed.data.hodometro_km_lido,
     })
-    .select("id, litros, km_rodado, consumo_kml, numero_nota")
+    .select(
+      "id, litros, valor_total, km_atual, km_rodado, consumo_kml, numero_nota, bomba_litros_lido, bomba_valor_total_lido, hodometro_km_lido"
+    )
     .single();
 
   if (insertError) {
@@ -406,9 +414,14 @@ async function avaliarEGravarAlertas(params: {
   abastecimento: {
     id: string;
     litros: number;
+    valor_total: number;
+    km_atual: number;
     km_rodado: number | null;
     consumo_kml: number | null;
     numero_nota: string | null;
+    bomba_litros_lido: number | null;
+    bomba_valor_total_lido: number | null;
+    hodometro_km_lido: number | null;
   };
   fotoHash: string | null;
   dataAbastecimento: string;
@@ -479,6 +492,8 @@ async function avaliarEGravarAlertas(params: {
   const contexto: ContextoAvaliacao = {
     abastecimento: {
       litros: abastecimento.litros,
+      valorTotal: abastecimento.valor_total,
+      kmAtual: abastecimento.km_atual,
       kmRodado: abastecimento.km_rodado,
       consumoKml: abastecimento.consumo_kml,
       numeroNota: abastecimento.numero_nota,
@@ -492,6 +507,9 @@ async function avaliarEGravarAlertas(params: {
     fotoDuplicada,
     consumoMedioHistorico,
     fotoExifTimestamp: exifTimestamp,
+    bombaLitrosLido: abastecimento.bomba_litros_lido,
+    bombaValorTotalLido: abastecimento.bomba_valor_total_lido,
+    hodometroKmLido: abastecimento.hodometro_km_lido,
   };
 
   const alertas = avaliarAbastecimento(contexto);

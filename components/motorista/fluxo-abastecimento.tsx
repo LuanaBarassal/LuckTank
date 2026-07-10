@@ -398,6 +398,21 @@ export default function FluxoAbastecimento({
     campos.km_atual = valores.kmAtual;
     campos.registro_uuid = registroUuid;
 
+    // Leituras da bomba/hodômetro (Bloco 2/3) — enviadas separado do que foi
+    // confirmado (litros/valor_total/km_atual acima) pro servidor rodar a
+    // conferência cruzada (Bloco 4). Ausente quando a foto não foi tirada,
+    // foi pulada, ou a leitura falhou — o motor de validação trata ausência
+    // como "sem prova pra comparar", nunca como fraude.
+    if (bombaOcrResultado?.dados?.litros != null) {
+      campos.bomba_litros_lido = String(bombaOcrResultado.dados.litros);
+    }
+    if (bombaOcrResultado?.dados?.valor_total != null) {
+      campos.bomba_valor_total_lido = String(bombaOcrResultado.dados.valor_total);
+    }
+    if (hodometroOcrResultado?.dados?.km != null) {
+      campos.hodometro_km_lido = String(hodometroOcrResultado.dados.km);
+    }
+
     if (ocrMeta) {
       // "kmAtual" nunca vem da IA (não existe no comprovante) — sempre seria
       // listado como "editado" sem significar uma correção de leitura, então

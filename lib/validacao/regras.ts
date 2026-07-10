@@ -16,6 +16,11 @@ export interface AlertaGerado {
 export interface ContextoAvaliacao {
   abastecimento: {
     litros: number;
+    // Confirmado pelo motorista no formulário — usado como "esperado" nas
+    // regras de conferência cruzada (Bloco 4: bomba/hodômetro comparados
+    // contra o que foi de fato confirmado, não contra a leitura da IA).
+    valorTotal: number;
+    kmAtual: number;
     kmRodado: number | null;
     consumoKml: number | null;
     numeroNota: string | null;
@@ -40,6 +45,14 @@ export interface ContextoAvaliacao {
   // (lib/exif.ts) — null sempre que a foto não tiver metadado (print,
   // WhatsApp, PNG, etc.). Ausência NUNCA gera alerta: é o caso normal.
   fotoExifTimestamp: string | null;
+  // Leituras da IA na foto da bomba/hodômetro (captura guiada de 3 fotos,
+  // Bloco 2) — null sempre que a foto não foi tirada, foi pulada, ou o
+  // Gemini não conseguiu ler com confiança. Ausência de leitura NUNCA gera
+  // alerta (ver regras abaixo) — só a presença de uma leitura que DIVERGE
+  // do confirmado é que é o sinal de suspeita.
+  bombaLitrosLido: number | null;
+  bombaValorTotalLido: number | null;
+  hodometroKmLido: number | null;
 }
 
 // Parâmetros ajustáveis das heurísticas — nenhum deles veio de teste
@@ -200,6 +213,106 @@ function avaliarFotoAntigaOuReaproveitada(ctx: ContextoAvaliacao): AlertaGerado 
   };
 }
 
+// Conferência cruzada entre fotos (captura guiada de 3 fotos, Bloco 4): o
+// valor anti-fraude está no CRUZAMENTO — bomba deve bater com cupom
+// (litros/valor), hodômetro deve bater com o KM confirmado. Fotos que
+// concordam entre si são prova difícil de forjar (motorista precisaria
+// fraudar 2 ou 3 fontes independentes de forma consistente, não só uma).
+//
+// Nível "atencao" (não "critico") nas 3 regras de propósito: diferente de
+// nota/foto duplicada (evidência quase inequívoca de reaproveitar prova),
+// aqui existe uma explicação inocente plausível e comum — reflexo no
+// visor da bomba, ângulo ruim do hodômetro, dígito confundido pela IA em
+// QUALQUER uma das duas leituras comparadas (não necessariamente na foto
+// "errada"). Tratar como suspeita a investigar, não como prova, evita
+// puni um motorista honesto por uma leitura ruim de OCR alheia à vontade
+// dele. Mesmo espírito de `avaliarFotoAntigaOuReaproveitada`.
+//
+// Tolerâncias (heurísticas de partida, não validadas estatisticamente —
+// mesmo corte já documentado nas outras regras deste arquivo): maior valor
+// entre um piso absoluto (cobre abastecimentos pequenos, onde 2% seria
+// apertado demais) e um percentual (cobre abastecimentos grandes, onde um
+// piso fixo seria frouxo demais).
+const TOLERANCIA_LITROS_BOMBA_CUPOM_ABSOLUTA = 0.5; // litros
+const TOLERANCIA_LITROS_BOMBA_CUPOM_PERCENTUAL = 0.02; // 2%
+
+function avaliarDivergenciaBombaCupomLitros(ctx: ContextoAvaliacao): AlertaGerado | null {
+  const { bombaLitrosLido } = ctx;
+  if (bombaLitrosLido == null) return null; // sem foto da bomba, ou ilegível — nunca é alerta
+
+  const { litros } = ctx.abastecimento;
+  const divergencia = Math.abs(bombaLitrosLido - litros);
+  const tolerancia = Math.max(
+    TOLERANCIA_LITROS_BOMBA_CUPOM_ABSOLUTA,
+    litros * TOLERANCIA_LITROS_BOMBA_CUPOM_PERCENTUAL
+  );
+  if (divergencia <= tolerancia) return null;
+
+  return {
+    tipoRegra: "divergencia_bomba_cupom_litros",
+    nivel: "atencao",
+    detalhes: {
+      litros_bomba: bombaLitrosLido,
+      litros_cupom: litros,
+      divergencia: Number(divergencia.toFixed(2)),
+    },
+  };
+}
+
+const TOLERANCIA_VALOR_BOMBA_CUPOM_ABSOLUTA = 2; // R$
+const TOLERANCIA_VALOR_BOMBA_CUPOM_PERCENTUAL = 0.02; // 2%
+
+function avaliarDivergenciaBombaCupomValor(ctx: ContextoAvaliacao): AlertaGerado | null {
+  const { bombaValorTotalLido } = ctx;
+  if (bombaValorTotalLido == null) return null;
+
+  const { valorTotal } = ctx.abastecimento;
+  const divergencia = Math.abs(bombaValorTotalLido - valorTotal);
+  const tolerancia = Math.max(
+    TOLERANCIA_VALOR_BOMBA_CUPOM_ABSOLUTA,
+    valorTotal * TOLERANCIA_VALOR_BOMBA_CUPOM_PERCENTUAL
+  );
+  if (divergencia <= tolerancia) return null;
+
+  return {
+    tipoRegra: "divergencia_bomba_cupom_valor",
+    nivel: "atencao",
+    detalhes: {
+      valor_bomba: bombaValorTotalLido,
+      valor_cupom: valorTotal,
+      divergencia: Number(divergencia.toFixed(2)),
+    },
+  };
+}
+
+// Tolerância bem mais larga que litros/valor de propósito: um hodômetro
+// mal lido pela IA erra fácil por dezenas de km (reflexo, ângulo, dígito de
+// décimos confundido com o de unidades) — e o motorista CORRIGINDO essa
+// leitura no formulário (Bloco 3) é o caso normal esperado, não suspeita.
+// 50km cobre folgadamente esse tipo de correção legítima; divergência maior
+// que isso é incomum o bastante pra valer a pena o escritório olhar (photo
+// de outro veículo, tentativa de mascarar km real).
+const TOLERANCIA_KM_HODOMETRO_CONFIRMADO = 50; // km
+
+function avaliarKmHodometroDivergeDoConfirmado(ctx: ContextoAvaliacao): AlertaGerado | null {
+  const { hodometroKmLido } = ctx;
+  if (hodometroKmLido == null) return null;
+
+  const { kmAtual } = ctx.abastecimento;
+  const divergencia = Math.abs(hodometroKmLido - kmAtual);
+  if (divergencia <= TOLERANCIA_KM_HODOMETRO_CONFIRMADO) return null;
+
+  return {
+    tipoRegra: "km_hodometro_diverge_do_confirmado",
+    nivel: "atencao",
+    detalhes: {
+      km_hodometro: hodometroKmLido,
+      km_confirmado: kmAtual,
+      divergencia: Number(divergencia.toFixed(1)),
+    },
+  };
+}
+
 export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
   return [
     avaliarCapacidadeTanque(ctx),
@@ -209,6 +322,9 @@ export function avaliarAbastecimento(ctx: ContextoAvaliacao): AlertaGerado[] {
     avaliarConsumoForaDaReferenciaFabricante(ctx),
     avaliarLitrosDesproporcionais(ctx),
     avaliarFotoAntigaOuReaproveitada(ctx),
+    avaliarDivergenciaBombaCupomLitros(ctx),
+    avaliarDivergenciaBombaCupomValor(ctx),
+    avaliarKmHodometroDivergeDoConfirmado(ctx),
   ].filter((alerta): alerta is AlertaGerado => alerta !== null);
 }
 

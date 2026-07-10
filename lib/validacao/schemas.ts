@@ -144,6 +144,14 @@ export const abastecimentoSchema = z
     ocr_prompt_version: textoOpcional,
     ocr_raw: z.string().optional().nullable(),
     campos_editados_manualmente: z.string().optional().nullable(),
+    // Leituras da IA na foto da bomba/hodômetro (captura guiada de 3 fotos,
+    // Bloco 4) — sempre opcionais: bomba/hodômetro são fotos opcionais desde
+    // o Bloco 1, e mesmo quando tiradas a leitura pode falhar. Guardadas
+    // separado do que foi confirmado (litros/valor_total/km_atual acima) pra
+    // alimentar as regras de conferência cruzada em lib/validacao/regras.ts.
+    bomba_litros_lido: z.coerce.number().positive().max(2000).optional().nullable(),
+    bomba_valor_total_lido: z.coerce.number().positive().max(100000).optional().nullable(),
+    hodometro_km_lido: z.coerce.number().positive().optional().nullable(),
   })
   .refine((data) => data.motorista_id || data.motorista_nome_livre, {
     message: "Selecione ou informe o nome do motorista",

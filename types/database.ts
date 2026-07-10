@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           atualizado_em: string | null
           bandeira_posto: string | null
+          bomba_litros_lido: number | null
+          bomba_valor_total_lido: number | null
           campos_editados_manualmente: Json | null
           consumo_kml: number | null
           criado_em: string
@@ -27,6 +29,7 @@ export type Database = {
           excluido_em: string | null
           excluido_por: string | null
           forma_pagamento: string | null
+          hodometro_km_lido: number | null
           hora: string | null
           id: string
           km_anterior_snapshot: number | null
@@ -54,6 +57,8 @@ export type Database = {
         Insert: {
           atualizado_em?: string | null
           bandeira_posto?: string | null
+          bomba_litros_lido?: number | null
+          bomba_valor_total_lido?: number | null
           campos_editados_manualmente?: Json | null
           consumo_kml?: number | null
           criado_em?: string
@@ -63,6 +68,7 @@ export type Database = {
           excluido_em?: string | null
           excluido_por?: string | null
           forma_pagamento?: string | null
+          hodometro_km_lido?: number | null
           hora?: string | null
           id?: string
           km_anterior_snapshot?: number | null
@@ -90,6 +96,8 @@ export type Database = {
         Update: {
           atualizado_em?: string | null
           bandeira_posto?: string | null
+          bomba_litros_lido?: number | null
+          bomba_valor_total_lido?: number | null
           campos_editados_manualmente?: Json | null
           consumo_kml?: number | null
           criado_em?: string
@@ -99,6 +107,7 @@ export type Database = {
           excluido_em?: string | null
           excluido_por?: string | null
           forma_pagamento?: string | null
+          hodometro_km_lido?: number | null
           hora?: string | null
           id?: string
           km_anterior_snapshot?: number | null

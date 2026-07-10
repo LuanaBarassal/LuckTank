@@ -15,6 +15,8 @@ function contextoBase(): ContextoAvaliacao {
   return {
     abastecimento: {
       litros: 100,
+      valorTotal: 550,
+      kmAtual: 150500,
       kmRodado: 500,
       consumoKml: 5,
       numeroNota: "123",
@@ -28,6 +30,9 @@ function contextoBase(): ContextoAvaliacao {
     fotoDuplicada: false,
     consumoMedioHistorico: 5,
     fotoExifTimestamp: null,
+    bombaLitrosLido: null,
+    bombaValorTotalLido: null,
+    hodometroKmLido: null,
   };
 }
 
@@ -335,6 +340,127 @@ describe("avaliarFotoAntigaOuReaproveitada", () => {
     expect(() => avaliarAbastecimento(ctx)).not.toThrow();
     const alertas = avaliarAbastecimento(ctx);
     expect(alertas.find((a) => a.tipoRegra === "foto_antiga_ou_reaproveitada")).toBeUndefined();
+  });
+});
+
+describe("avaliarDivergenciaBombaCupomLitros", () => {
+  it("não dispara quando não há foto da bomba (null nunca é fraude)", () => {
+    const ctx = contextoBase();
+    ctx.bombaLitrosLido = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_litros")).toBeUndefined();
+  });
+
+  it("não dispara quando os valores são idênticos", () => {
+    const ctx = contextoBase();
+    ctx.bombaLitrosLido = ctx.abastecimento.litros;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_litros")).toBeUndefined();
+  });
+
+  it("não dispara no limite exato da tolerância (100 litros no cupom, 2% = 2L)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.litros = 100;
+    ctx.bombaLitrosLido = 102; // exatamente 2L de diferença — limite exato não dispara
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_litros")).toBeUndefined();
+  });
+
+  it("dispara atenção acima da tolerância percentual", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.litros = 100;
+    ctx.bombaLitrosLido = 110; // 10L de diferença, bem acima dos 2L de tolerância
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_litros");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+    expect(alerta?.detalhes).toEqual({ litros_bomba: 110, litros_cupom: 100, divergencia: 10 });
+  });
+
+  it("dispara acima da tolerância ABSOLUTA mesmo em abastecimento pequeno (piso de 0.5L)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.litros = 5; // 2% de 5L seria só 0.1L — usa o piso de 0.5L
+    ctx.bombaLitrosLido = 6; // 1L de diferença, acima do piso de 0.5L
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_litros")).toBeDefined();
+  });
+});
+
+describe("avaliarDivergenciaBombaCupomValor", () => {
+  it("não dispara quando não há foto da bomba", () => {
+    const ctx = contextoBase();
+    ctx.bombaValorTotalLido = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_valor")).toBeUndefined();
+  });
+
+  it("não dispara quando os valores são idênticos", () => {
+    const ctx = contextoBase();
+    ctx.bombaValorTotalLido = ctx.abastecimento.valorTotal;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_valor")).toBeUndefined();
+  });
+
+  it("não dispara dentro da tolerância", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.valorTotal = 550;
+    ctx.bombaValorTotalLido = 561; // R$11 de diferença, 2% de 550 = R$11 — limite exato não dispara
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_valor")).toBeUndefined();
+  });
+
+  it("dispara atenção acima da tolerância percentual", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.valorTotal = 550;
+    ctx.bombaValorTotalLido = 600; // R$50 de diferença
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_valor");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+    expect(alerta?.detalhes).toEqual({ valor_bomba: 600, valor_cupom: 550, divergencia: 50 });
+  });
+
+  it("dispara acima da tolerância ABSOLUTA mesmo em abastecimento pequeno (piso de R$2)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.valorTotal = 20; // 2% de R$20 seria só R$0,40 — usa o piso de R$2
+    ctx.bombaValorTotalLido = 23; // R$3 de diferença, acima do piso de R$2
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "divergencia_bomba_cupom_valor")).toBeDefined();
+  });
+});
+
+describe("avaliarKmHodometroDivergeDoConfirmado", () => {
+  it("não dispara quando não há foto do hodômetro", () => {
+    const ctx = contextoBase();
+    ctx.hodometroKmLido = null;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "km_hodometro_diverge_do_confirmado")).toBeUndefined();
+  });
+
+  it("não dispara quando os valores são idênticos", () => {
+    const ctx = contextoBase();
+    ctx.hodometroKmLido = ctx.abastecimento.kmAtual;
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "km_hodometro_diverge_do_confirmado")).toBeUndefined();
+  });
+
+  it("não dispara dentro da tolerância (motorista corrigindo uma leitura de OCR levemente errada)", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.kmAtual = 150500;
+    ctx.hodometroKmLido = 150480; // 20km de diferença, dentro dos 50km de tolerância
+    const alertas = avaliarAbastecimento(ctx);
+    expect(alertas.find((a) => a.tipoRegra === "km_hodometro_diverge_do_confirmado")).toBeUndefined();
+  });
+
+  it("dispara atenção acima da tolerância de 50km", () => {
+    const ctx = contextoBase();
+    ctx.abastecimento.kmAtual = 150500;
+    ctx.hodometroKmLido = 150300; // 200km de diferença
+    const alertas = avaliarAbastecimento(ctx);
+    const alerta = alertas.find((a) => a.tipoRegra === "km_hodometro_diverge_do_confirmado");
+    expect(alerta).toBeDefined();
+    expect(alerta?.nivel).toBe("atencao");
+    expect(alerta?.detalhes).toEqual({ km_hodometro: 150300, km_confirmado: 150500, divergencia: 200 });
   });
 });
 
