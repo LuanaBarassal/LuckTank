@@ -78,6 +78,15 @@ export const criarEmpresaSchema = z.object({
   emailAdministrador: z.string().trim().email("E-mail inválido"),
 });
 
+// Caixa do escritório que recebe o e-mail de "abastecimento registrado"
+// (lib/email/notificar-abastecimento.ts) — nullable no schema porque `null`
+// explícito é como se limpa o campo (mesmo padrão de atualizarProximaRenovacao).
+export const emailNotificacaoSchema = z
+  .string()
+  .trim()
+  .email("E-mail inválido")
+  .nullable();
+
 export const PAPEIS = ["supervisor", "gerente", "administrador"] as const;
 
 export const convidarUsuarioSchema = z.object({

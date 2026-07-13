@@ -8,6 +8,7 @@ import ConvidarUsuarioEmpresaForm from "@/components/escritorio/convidar-usuario
 import CriarVeiculoEmpresaForm from "@/components/escritorio/criar-veiculo-empresa-form";
 import CriarVeiculosLoteForm from "@/components/escritorio/criar-veiculos-lote-form";
 import RenovacaoEmpresaEditor from "@/components/escritorio/renovacao-empresa-editor";
+import EmailNotificacaoEmpresaEditor from "@/components/escritorio/email-notificacao-empresa-editor";
 import UsuariosEmpresaLista, {
   type UsuarioEmpresaLinha,
 } from "@/components/escritorio/usuarios-empresa-lista";
@@ -46,7 +47,7 @@ export default async function AdminSistemaPage() {
 
   const { data: empresas } = await admin
     .from("empresas")
-    .select("id, nome, criado_em, proxima_renovacao")
+    .select("id, nome, criado_em, proxima_renovacao, email_notificacao")
     .order("criado_em", { ascending: false });
 
   const idsEmpresas = (empresas ?? []).map((e) => e.id);
@@ -126,6 +127,7 @@ export default async function AdminSistemaPage() {
                     {mapaUsuarios.get(e.id) ?? 0} usuário(s) · {mapaVeiculos.get(e.id) ?? 0} veículo(s)
                   </div>
                   <RenovacaoEmpresaEditor empresaId={e.id} proximaRenovacao={e.proxima_renovacao} />
+                  <EmailNotificacaoEmpresaEditor empresaId={e.id} emailNotificacao={e.email_notificacao} />
                 </div>
               </div>
               <UsuariosEmpresaLista empresaId={e.id} usuarios={usuariosPorEmpresa.get(e.id) ?? []} />

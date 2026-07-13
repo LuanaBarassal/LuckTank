@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ehDonoSistema } from "@/lib/auth/dono-sistema";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { criarEmpresaSchema, convidarUsuarioSchema, veiculoSchema } from "@/lib/validacao/schemas";
+import {
+  criarEmpresaSchema,
+  convidarUsuarioSchema,
+  veiculoSchema,
+  emailNotificacaoSchema,
+} from "@/lib/validacao/schemas";
 import { urlBaseAtual } from "@/lib/url-atual";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
@@ -220,6 +225,42 @@ export async function atualizarProximaRenovacao(
     .eq("id", empresaId);
 
   if (error) return { error: "Não foi possível salvar a data." };
+
+  revalidatePath("/admin-sistema");
+  return { data: true };
+}
+
+// E-mail que recebe a notificação de "abastecimento registrado" (uma caixa
+// única por empresa, não a lista de administradores — diferente do e-mail
+// de alerta crítico, que continua indo pra todos os `usuarios` com papel
+// administrador). `null`/string vazia limpa o campo (mesmo padrão de
+// atualizarProximaRenovacao acima) — sem e-mail configurado, o disparo em
+// lib/email/notificar-abastecimento.ts simplesmente não envia nada.
+export async function atualizarEmailNotificacao(
+  empresaId: string,
+  email: string | null
+): Promise<Resultado<true>> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Não autenticado." };
+  if (!ehDonoSistema(user.email)) {
+    return { error: "Só o dono do sistema pode editar isso." };
+  }
+
+  const parsed = emailNotificacaoSchema.safeParse(email?.trim() || null);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "E-mail inválido." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("empresas")
+    .update({ email_notificacao: parsed.data })
+    .eq("id", empresaId);
+
+  if (error) return { error: "Não foi possível salvar o e-mail." };
 
   revalidatePath("/admin-sistema");
   return { data: true };

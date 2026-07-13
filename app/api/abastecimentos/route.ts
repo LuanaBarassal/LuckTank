@@ -6,11 +6,13 @@ import {
   avaliarAbastecimento,
   kmMenorQueUltimoRegistrado,
   type ContextoAvaliacao,
+  type AlertaGerado,
 } from "@/lib/validacao/regras";
 import { validarFoto } from "@/lib/validacao/arquivo";
 import { extrairExifFoto } from "@/lib/exif";
 import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
 import { notificarAlertaCritico } from "@/lib/email/notificar-alerta-critico";
+import { notificarAbastecimentoRegistrado } from "@/lib/email/notificar-abastecimento";
 import { formatarVeiculo } from "@/lib/formatacao";
 import type { Json } from "@/types/database";
 
@@ -206,18 +208,27 @@ export async function POST(request: NextRequest) {
   // tenants. Se não pertencer à empresa do veículo, trata como se não tivesse
   // vindo — nunca bloqueia o registro por causa disso, só cai pro nome livre.
   let motoristaId = parsed.data.motorista_id ?? null;
+  let motoristaNomeCadastrado: string | null = null;
   if (motoristaId) {
     const { data: motorista } = await admin
       .from("motoristas")
-      .select("id")
+      .select("id, nome")
       .eq("id", motoristaId)
       .eq("empresa_id", veiculo.empresa_id)
       .maybeSingle();
-    if (!motorista) motoristaId = null;
+    if (!motorista) {
+      motoristaId = null;
+    } else {
+      motoristaNomeCadastrado = motorista.nome;
+    }
   }
   if (!motoristaId && !parsed.data.motorista_nome_livre) {
     return NextResponse.json({ error: "Motorista inválido." }, { status: 400 });
   }
+  // Rótulo pro e-mail de notificação — mesma lógica de fallback usada no
+  // resto do app (dashboard/export): nome cadastrado se vinculado, senão o
+  // nome livre que o motorista digitou.
+  const motoristaLabel = motoristaNomeCadastrado ?? parsed.data.motorista_nome_livre ?? "—";
 
   // `registro_uuid` (já validado como UUID pelo schema) + sufixo por tipo +
   // extensão de uma lista fechada — NUNCA `foto.name` (achado numa auditoria
@@ -385,8 +396,9 @@ export async function POST(request: NextRequest) {
 
   // Alerta é bônus informativo pro escritório — nunca deve derrubar a
   // resposta de sucesso do registro principal, que já foi gravado.
+  let alertasGerados: AlertaGerado[] = [];
   try {
-    await avaliarEGravarAlertas({
+    alertasGerados = await avaliarEGravarAlertas({
       admin,
       veiculo,
       abastecimento,
@@ -397,6 +409,29 @@ export async function POST(request: NextRequest) {
   } catch (erro) {
     console.error("Falha ao avaliar alertas do abastecimento:", erro);
   }
+
+  // E-mail de "abastecimento registrado" — dispara SEMPRE (diferente do de
+  // alerta crítico acima, que só dispara pra nível crítico e vai pra outra
+  // lista de destinatários). Nunca lança (mesmo invariante #7 — ver
+  // notificar-abastecimento.ts); chamado fora do try/catch acima de
+  // propósito, pra não ficar condicionado a `avaliarEGravarAlertas` ter
+  // funcionado (mesmo se o motor de alertas falhar, o abastecimento em si
+  // já está gravado e merece o e-mail de confirmação).
+  await notificarAbastecimentoRegistrado({
+    abastecimentoId: abastecimento.id,
+    empresaId: veiculo.empresa_id,
+    veiculoLabel: formatarVeiculo(veiculo.prefixo, veiculo.placa),
+    dataAbastecimento: parsed.data.data_abastecimento,
+    hora: parsed.data.hora ?? null,
+    motoristaLabel,
+    litros: abastecimento.litros,
+    valorTotal: abastecimento.valor_total,
+    valorLitro: parsed.data.valor_litro ?? null,
+    postoNome: parsed.data.posto_nome ?? null,
+    postoCidade: parsed.data.posto_cidade ?? null,
+    kmAtual: abastecimento.km_atual,
+    alertas: alertasGerados,
+  });
 
   return NextResponse.json({ id: abastecimento.id });
 }
@@ -426,7 +461,7 @@ async function avaliarEGravarAlertas(params: {
   fotoHash: string | null;
   dataAbastecimento: string;
   exifTimestamp: string | null;
-}) {
+}): Promise<AlertaGerado[]> {
   const { admin, veiculo, abastecimento, fotoHash, dataAbastecimento, exifTimestamp } = params;
 
   let notaDuplicada = false;
@@ -513,7 +548,7 @@ async function avaliarEGravarAlertas(params: {
   };
 
   const alertas = avaliarAbastecimento(contexto);
-  if (alertas.length === 0) return;
+  if (alertas.length === 0) return alertas;
 
   await admin.from("alertas").insert(
     alertas.map((alerta) => ({
@@ -540,4 +575,6 @@ async function avaliarEGravarAlertas(params: {
       tiposRegraCriticos,
     });
   }
+
+  return alertas;
 }

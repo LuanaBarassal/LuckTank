@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Card, CardTitle } from "@/components/ui/card";
 import PinForm from "@/components/escritorio/pin-form";
+import EmailNotificacaoForm from "@/components/escritorio/email-notificacao-form";
 import { temPinDefinido } from "./actions";
 
 export default async function ConfiguracoesPage() {
@@ -10,9 +11,10 @@ export default async function ConfiguracoesPage() {
   if (!usuario) redirect("/login");
 
   const supabase = await createClient();
-  const [{ data: usuarios }, jaTemPin] = await Promise.all([
+  const [{ data: usuarios }, jaTemPin, { data: empresa }] = await Promise.all([
     supabase.from("usuarios").select("id, nome, email, papel").order("nome"),
     temPinDefinido(),
+    supabase.from("empresas").select("email_notificacao").eq("id", usuario.empresa_id).single(),
   ]);
 
   return (
@@ -26,6 +28,20 @@ export default async function ConfiguracoesPage() {
           excluir um abastecimento. {jaTemPin ? "Você já tem um PIN configurado." : "Você ainda não configurou um PIN — essas ações ficarão bloqueadas até configurar."}
         </p>
         <PinForm jaTemPin={jaTemPin} />
+      </Card>
+
+      <Card variant="dark" className="max-w-md">
+        <CardTitle variant="dark">E-mail de notificação</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Toda vez que um abastecimento é registrado, o LuckTank manda um resumo pra este e-mail
+          (litros, valor, KM, motorista e eventuais alertas). {usuario.papel === "administrador"
+            ? "Só administradores podem alterar."
+            : "Só um administrador pode alterar este e-mail."}
+        </p>
+        <EmailNotificacaoForm
+          emailAtual={empresa?.email_notificacao ?? null}
+          podeEditar={usuario.papel === "administrador"}
+        />
       </Card>
 
       <Card variant="dark" className="max-w-2xl">

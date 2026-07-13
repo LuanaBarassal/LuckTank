@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-10 (reordena as 3 fotos guiadas — bomba → cupom → hodômetro — e atualiza o passo a passo impresso na etiqueta do veículo).
+Última atualização: 2026-07-13 (e-mail de notificação por abastecimento via Resend).
 
 ## Visão do produto
 
@@ -2804,6 +2804,142 @@ passo a passo impresso na etiqueta do veículo precisa refletir isso.
   (empresa, veículo, usuário, abastecimento) removido depois, confirmado
   por query independente. `tsc`, `lint`, `test` (130/130) e `build`
   limpos.
+
+## E-mail de notificação por abastecimento registrado (2026-07-13)
+
+Item que tinha ficado só cotado em "Notificação por e-mail de alerta
+crítico — adiada" (2026-07-07): agora todo abastecimento registrado (não só
+os que geram alerta crítico) manda um e-mail resumido pra uma caixa única
+configurável por empresa — diferente do e-mail de alerta crítico que já
+existia (2026-07-08), que continua intacto e vai pra outra lista de
+destinatários. Reaproveitou 100% da infraestrutura de e-mail já existente
+(`lib/email/cliente.ts`, `lib/email/envelope.ts`, domínio `luckfrotas.com.br`
+já verificado no Resend) — nenhuma infraestrutura nova.
+
+- ✅ **Bloco 1 — `empresas.email_notificacao` (migration `0017`).** Coluna
+  `text` nullable + `CHECK` de formato básico (`~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'`,
+  defesa em profundidade — a validação "de verdade" é o Zod
+  (`emailNotificacaoSchema`, `lib/validacao/schemas.ts`), mas RLS/schema
+  nunca deveriam ser a única linha de defesa, mesmo raciocínio da 0012).
+  Sem e-mail configurado (empresa nova), o disparo do Bloco 2 simplesmente
+  não envia nada — sem erro. **Editável em DOIS lugares, decisão
+  deliberada**:
+  - `/admin-sistema` (`EmailNotificacaoEmpresaEditor`,
+    `atualizarEmailNotificacao` em `admin-sistema/actions.ts`, gate
+    `ehDonoSistema`) — pro dono do sistema já deixar configurado no
+    onboarding do cliente, mesmo padrão inline de `RenovacaoEmpresaEditor`.
+  - `/configuracoes` (`EmailNotificacaoForm`,
+    `atualizarEmailNotificacaoPropria`, só papel `administrador` da própria
+    empresa) — self-service, porque decidir qual caixa de e-mail recebe os
+    avisos é uma preferência operacional do dia a dia, não um "cadastro"
+    (veículo/usuário) — não conflita com a regra de centralização de
+    2026-07-07 (essa é sobre impedir cliente de cadastrar veículo/usuário
+    sozinho pra não "emprestar" a conta paga; isso aqui não cria nem
+    empresta nada). Supervisor/gerente veem o valor atual (input desabilitado,
+    não escondido) mas não podem alterar.
+  - **Validado com script isolado** contra o Supabase real (empresa
+    descartável, removida depois, confirmado por query independente):
+    `UPDATE` com e-mail inválido barrado pelo `CHECK` da migration
+    (`"violates check constraint"`), e-mail válido grava normal.
+
+- ✅ **Bloco 2 — o disparo (`lib/email/notificar-abastecimento.ts`).**
+  Chamado em `app/api/abastecimentos/route.ts` **depois** que o
+  abastecimento já foi gravado e depois de `avaliarEGravarAlertas` (que
+  passou a devolver `AlertaGerado[]` em vez de `void`, pra alimentar o corpo
+  do e-mail) — chamado FORA do `try/catch` de `avaliarEGravarAlertas` de
+  propósito, pra não ficar condicionado ao motor de alertas ter funcionado
+  (mesmo se ele falhar, o abastecimento já está gravado e merece o e-mail de
+  confirmação). Segue exatamente o padrão de `notificar-alerta-critico.ts`:
+  busca `email_notificacao` da empresa (service role); se não houver,
+  retorna em silêncio (nem loga — não é erro, só não há pra onde enviar);
+  monta o e-mail e chama `enviarEmail()`; **nunca lança** (try/catch
+  interno, `console.error` em falha) — mesmo invariante #7.
+  - **Idempotência**: não existe (nem precisa existir) uma trava extra de
+    "já notificado" — a função só é alcançada uma vez por abastecimento de
+    verdade, porque o `INSERT` com `registro_uuid` repetido (retry de rede,
+    ou fila offline reenviando) já esbarra no `unique` e retorna **antes**
+    de chegar em `avaliarEGravarAlertas`/`notificarAbastecimentoRegistrado`
+    (bloco `insertError.code === "23505"`, existente desde a Fase 3).
+    `abastecimentoId` é passado só pra aparecer no log de erro, não controla
+    duplicidade — não há mecanismo de dedup porque não há cenário no código
+    atual em que a mesma linha chegue ali duas vezes.
+  - **Caminho offline**: não precisou de nenhum código novo — a fila offline
+    (Fase 5) já resincroniza chamando o mesmo `POST /api/abastecimentos` do
+    servidor, então o e-mail sai naturalmente no momento da sincronização
+    real (quando o servidor processa), nunca no momento em que o motorista
+    ficou offline no aparelho dele.
+
+- ✅ **Bloco 3 — conteúdo (`lib/email/conteudo-abastecimento.ts`, 9 testes).**
+  Função pura `montarEmailAbastecimentoRegistrado()`, mesmo padrão de
+  `conteudo-alerta.ts` (reaproveita `envolverEmail`/`botaoEmail` do envelope
+  e `ROTULO_REGRA` pra traduzir `tipo_regra`). Assunto: `"LuckTank ·
+  Abastecimento registrado — <prefixo · placa>"`. Corpo: data/hora,
+  motorista (nome cadastrado se vinculado, senão nome livre — mesmo
+  fallback usado no resto do app), litros, valor total, valor/litro (omitido
+  quando não informado), posto/cidade, KM. Quando há alertas, lista cada um
+  com o nível em destaque usando a MESMA paleta de cores do painel real
+  (`info`/`atencao`/`critico`, hex tirado direto de `tailwind.config.ts` —
+  e-mail não tem acesso a classe Tailwind, só `style` inline).
+  - **Decisão sobre a redundância com o e-mail de alerta crítico** (pedida
+    explicitamente): os dois e-mails continuam disparando separados — não
+    dei pra unificar nem suprimir nenhum dos dois, porque são coisas
+    genuinamente diferentes: o de alerta crítico vai pra TODOS os
+    `administrador` da empresa (é um alarme, quer alcançar qualquer um que
+    possa agir), e o de abastecimento vai só pra UMA caixa configurável (é
+    um resumo operacional de rotina). Se as duas caixas apontarem pra
+    pessoas diferentes, não há redundância nenhuma de fato. Pra cobrir o
+    caso em que apontam pra MESMA caixa (bem provável na prática — a "caixa
+    do escritório" tende a ser também o e-mail de um administrador), o
+    e-mail de abastecimento **já mostra o alerta crítico no corpo** (nível
+    em destaque) **e**, quando há pelo menos um crítico, adiciona uma linha
+    explícita: *"Este abastecimento tem alerta crítico — um e-mail
+    separado, com mais destaque, também foi enviado aos administradores da
+    empresa."* — assim quem receber os dois entende que é por design (dois
+    públicos/propósitos diferentes), não acha que é duplicidade ou bug.
+    Nenhuma linha de `notificar-alerta-critico.ts` foi alterada.
+
+- ✅ **Bloco 4 — cota do Resend.** Free tier: **100 e-mails/dia, 3.000/mês**.
+  Com 1 e-mail por abastecimento e 1 destinatário por empresa, o volume por
+  cliente é baixo (frota de ônibus não abastece todo dia); fica relevante
+  monitorar quando houver várias empresas simultâneas. Falha de cota (429)
+  ou qualquer outro erro do Resend segue o mesmo caminho genérico de falha
+  já validado (try/catch em `notificar-abastecimento.ts`, loga e segue) —
+  não precisou de tratamento especial pra 429 especificamente, o
+  abastecimento nunca depende do resultado do envio.
+
+**Validado contra o Supabase/servidor real** (empresas/veículos
+descartáveis, removidos depois, confirmado por query independente; `npm run
+dev` local contra o banco de produção, mesmo padrão de sempre):
+- Abastecimento normal (sem alerta) → `200`, 0 alertas gerados.
+- Abastecimento com litros acima da capacidade do tanque → `200`, alerta
+  crítico gravado (`litros_acima_capacidade_tanque`); log do servidor sem
+  nenhum erro de e-mail (silêncio = sucesso).
+- Reenvio do MESMO `registro_uuid` do caso anterior → devolve o MESMO `id`,
+  contagem de alertas não duplica (2 antes, 2 depois) — confirma
+  idempotência também pro e-mail (o código nem chega a tentar de novo).
+- Empresa sem `email_notificacao` configurado → `200` normal, sem erro, sem
+  tentativa de envio.
+- **Falha real do Resend simulada de propósito**: chave `RESEND_API_KEY`
+  temporariamente trocada por um valor inválido (backup restaurado
+  logo depois, nunca commitado), servidor reiniciado, abastecimento
+  registrado de novo — resposta `200` idêntica, registro gravado no banco
+  normalmente, e o log do servidor mostrou exatamente o erro esperado
+  (`Falha ao notificar abastecimento <id> registrado por e-mail: Error:
+  Resend respondeu 401...`), confirmando que o motorista nunca veria essa
+  falha e o registro nunca dependeu dela.
+- 2 e-mails reais chegaram a sair de verdade pro domínio já verificado
+  (`luckfrotas.com.br`) durante os testes — conteúdo (nível de alerta,
+  dados do abastecimento) não confirmado visualmente nesta sessão por não
+  haver acesso à caixa de entrada; formatação/conteúdo cobertos pelos 9
+  testes automatizados de `conteudo-abastecimento.test.ts`, que checam o
+  HTML gerado campo a campo.
+
+**Verificado**: `tsc --noEmit`, `eslint` e `npm test` (139/139 — 9 novos)
+limpos; `npm run build` limpo. Migration `0017` aplicada em produção via
+`supabase db push --linked`; `types/database.ts` regerado via `supabase gen
+types typescript --linked` (sem aliases de conveniência — nenhum existia no
+arquivo antes desta sessão, apesar do que uma nota antiga de convenção
+sugeria).
 
 ## Regras invariantes (não podem quebrar)
 

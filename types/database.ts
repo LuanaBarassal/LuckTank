@@ -281,18 +281,21 @@ export type Database = {
       empresas: {
         Row: {
           criado_em: string
+          email_notificacao: string | null
           id: string
           nome: string
           proxima_renovacao: string | null
         }
         Insert: {
           criado_em?: string
+          email_notificacao?: string | null
           id?: string
           nome: string
           proxima_renovacao?: string | null
         }
         Update: {
           criado_em?: string
+          email_notificacao?: string | null
           id?: string
           nome?: string
           proxima_renovacao?: string | null
