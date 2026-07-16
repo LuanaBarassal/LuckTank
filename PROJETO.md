@@ -3197,17 +3197,25 @@ de um teste local), resolvido com `unregister()` + limpar `caches`.
 - `tsc --noEmit`, `eslint` e `npm test` (146 testes, 5 novos de
   `lib/auth/senha.test.ts`) limpos; `next build` limpo.
 
-**Não testado nesta sessão (limitação de ambiente, não de código)**: o
-rate limit do login estourando de verdade — `.env.local` local não tem
-`UPSTASH_REDIS_REST_URL`/`TOKEN` configuradas, então `limitarLogin` fica
-inerte (sempre libera, mesmo comportamento documentado de todo o resto de
-`lib/rate-limit.ts`). `limitarLogin` reaproveita exatamente o mesmo
-mecanismo (`Ratelimit.slidingWindow` via Upstash) já **confirmado ativo em
-produção** pra `/api/ocr` no Bloco 1 da Fase 8 — mesma classe/API, só
-uma chave/prefixo novos. Se algum dia for preciso confirmar o disparo de
-verdade, precisa rodar contra um ambiente com Upstash configurado (preview
-da Vercel, ou `UPSTASH_REDIS_REST_URL`/`TOKEN` temporárias em
-`.env.local`).
+**Atualização — rate limit do login confirmado disparando de verdade**
+(mesmo dia, banco Upstash de dev dedicado criado pela usuária, credenciais
+coladas em `.env.local` só localmente, nunca commitadas). Contra `next
+start` real: 12 tentativas de login seguidas (senha errada, mesmo
+e-mail) — as 8 primeiras devolvem `"E-mail ou senha inválidos."`, a
+partir da 9ª vira `"Muitas tentativas. Aguarde alguns minutos e tente
+novamente."` (bate exato com o limite de 8/15min por e-mail); um e-mail
+diferente, mesmo IP (`::1` local), também barrado na hora (limite de
+10/10min por IP já estourado pelas 12 tentativas anteriores) — confirma
+as duas chaves funcionando independentes. TTL das chaves consultado
+direto na API REST do Upstash (`GET /ttl/<chave>`): `lucktank:login:ip:*`
+expira em ~1129s, `lucktank:login:email:*` em ~1729-1779s — a janela
+deslizante realmente expira sozinha, não trava pra sempre (consistente
+com o algoritmo do Upstash: TTL de um sliding window fica em torno de 2x
+a duração da janela configurada). Chaves de teste apagadas ao final
+(`DEL` via REST API, confirmado `{"result":[]}` na releitura); depois da
+limpeza, uma tentativa nova no mesmo e-mail/IP voltou a mostrar a
+mensagem normal de credenciais inválidas — confirma que não sobrou
+estado preso.
 
 **Adiado de propósito, achados de gravidade menor da mesma auditoria**:
 `'unsafe-inline'` na CSP, rate limit em `/r/[qrToken]`, mensagem de
