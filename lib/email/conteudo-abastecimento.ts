@@ -1,5 +1,5 @@
 import { ROTULO_REGRA } from "../validacao/rotulos";
-import { envolverEmail, botaoEmail } from "./envelope";
+import { envolverEmail, botaoEmail, escapeHtml } from "./envelope";
 import { formatarMoeda, formatarDataBr } from "../formatacao";
 import type { NivelAlerta, AlertaGerado } from "../validacao/regras";
 
@@ -43,11 +43,15 @@ function linhaAlerta(alerta: AlertaResumo): string {
   `;
 }
 
+// `rotulo` é sempre um literal fixo definido nas chamadas abaixo (nunca vem
+// de fora); `valor`, não — pode carregar motorista_nome_livre/posto_nome,
+// texto livre digitado por quem escaneia o QR sem login. Escapado aqui, num
+// único ponto, pra nenhuma chamada futura esquecer.
 function linhaDado(rotulo: string, valor: string): string {
   return `
     <tr>
       <td style="padding:4px 0;color:#64748b;font-size:13px;width:40%;">${rotulo}</td>
-      <td style="padding:4px 0;color:#0f172a;font-size:13px;font-weight:600;">${valor}</td>
+      <td style="padding:4px 0;color:#0f172a;font-size:13px;font-weight:600;">${escapeHtml(valor)}</td>
     </tr>
   `;
 }
@@ -124,7 +128,7 @@ export function montarEmailAbastecimentoRegistrado(params: {
       Abastecimento registrado
     </p>
     <h1 style="margin:0 0 16px;color:#0f172a;font-size:20px;font-family:Arial,Helvetica,sans-serif;">
-      ${veiculoLabel}
+      ${escapeHtml(veiculoLabel)}
     </h1>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${linhasDados}</table>
     ${blocoAlertas}

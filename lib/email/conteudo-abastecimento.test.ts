@@ -81,6 +81,19 @@ describe("montarEmailAbastecimentoRegistrado", () => {
     expect(html).not.toContain("Valor por litro");
   });
 
+  it("escapa HTML em campos de texto livre (motorista/posto, digitados sem login via QR)", () => {
+    const { html } = montarEmailAbastecimentoRegistrado({
+      ...BASE,
+      motoristaLabel: `<a href="https://phishing.exemplo">clique aqui</a>`,
+      postoNome: `Posto" onmouseover="alert(1)`,
+      alertas: [],
+    });
+    expect(html).not.toContain("<a href=\"https://phishing.exemplo\">");
+    expect(html).toContain("&lt;a href=&quot;https://phishing.exemplo&quot;&gt;clique aqui&lt;/a&gt;");
+    expect(html).not.toContain('onmouseover="alert(1)');
+    expect(html).toContain("Posto&quot; onmouseover=&quot;alert(1)");
+  });
+
   it("link do botão vai pro dashboard sem alerta e pro painel de alertas com alerta", () => {
     const semAlerta = montarEmailAbastecimentoRegistrado({ ...BASE, alertas: [] });
     expect(semAlerta.html).toContain("https://luck-tank.vercel.app/dashboard");

@@ -1,5 +1,5 @@
 import { ROTULO_REGRA } from "../validacao/rotulos";
-import { envolverEmail, botaoEmail } from "./envelope";
+import { envolverEmail, botaoEmail, escapeHtml } from "./envelope";
 
 // Função pura (sem I/O, sem fetch) — monta assunto/corpo do e-mail de
 // alerta crítico a partir de dado já resolvido. Separado de
@@ -36,7 +36,7 @@ export function montarEmailAlertaCritico(params: {
       Alerta crítico
     </p>
     <h1 style="margin:0 0 16px;color:#0f172a;font-size:20px;font-family:Arial,Helvetica,sans-serif;">
-      Fique de olho no veículo <strong>${veiculoLabel}</strong>
+      Fique de olho no veículo <strong>${escapeHtml(veiculoLabel)}</strong>
     </h1>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;margin-bottom:24px;">
       <tr>

@@ -49,6 +49,22 @@ export function envolverEmail(corpoHtml: string): string {
 `.trim();
 }
 
+// Escapa texto de origem não confiável (ex.: motorista_nome_livre/posto_nome,
+// preenchidos por quem escaneia o QR sem login nenhum) antes de entrar num
+// template de e-mail — sem isso, um nome como `<a href="...">clique aqui</a>`
+// vira um link clicável de verdade dentro do e-mail real que chega pro
+// escritório (achado de auditoria 2026-07-16: nenhum sink de HTML de e-mail
+// escapava valor nenhum). Mesmo espírito do `escapeXml` de lib/qr.ts, só que
+// para HTML (cobre aspas também, que XML/atributo não precisava).
+export function escapeHtml(valor: string): string {
+  return valor
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 // Botão de ação — mesmo estilo do botão primário do app (fundo ciano,
 // texto navy, cantos arredondados). `display:inline-block` é necessário
 // pra padding funcionar em clientes de e-mail (um <a> puro ignora padding

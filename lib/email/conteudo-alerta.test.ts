@@ -39,6 +39,16 @@ describe("montarEmailAlertaCritico", () => {
     expect(html).toContain("regra_inexistente_no_mapa");
   });
 
+  it("escapa HTML no veiculoLabel", () => {
+    const { html } = montarEmailAlertaCritico({
+      veiculoLabel: `<img src=x onerror=alert(1)>`,
+      tiposRegra: ["nota_fiscal_duplicada"],
+      urlAlertas: "https://luck-tank.vercel.app/alertas",
+    });
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+  });
+
   it("inclui o link do painel de alertas", () => {
     const { html } = montarEmailAlertaCritico({
       veiculoLabel: "EXM1A23",
