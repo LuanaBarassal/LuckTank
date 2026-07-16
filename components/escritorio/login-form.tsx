@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { login } from "@/lib/auth/sessao-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { IconeOlho } from "@/components/ui/icone-olho";
@@ -21,13 +21,12 @@ export default function LoginForm() {
     setErro(null);
     setCarregando(true);
 
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password: senha });
+    const resultado = await login(email, senha);
 
     setCarregando(false);
 
-    if (error) {
-      setErro("E-mail ou senha inválidos.");
+    if (resultado.error) {
+      setErro(resultado.error);
       return;
     }
 

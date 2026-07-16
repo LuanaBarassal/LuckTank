@@ -33,7 +33,7 @@ export const maxDuration = 55;
 // ficava aberta pra qualquer chamada anônima consumir a cota gratuita do
 // Gemini (~1.500 leituras/dia) sem nem precisar de um veículo real.
 export async function POST(request: NextRequest) {
-  const { permitido } = await limitarOcr(obterIp(request));
+  const { permitido } = await limitarOcr(obterIp(request.headers));
   if (!permitido) {
     return NextResponse.json(
       { error: "Muitas tentativas. Aguarde um minuto e tente novamente." },

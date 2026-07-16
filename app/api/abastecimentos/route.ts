@@ -8,7 +8,7 @@ import {
   type ContextoAvaliacao,
   type AlertaGerado,
 } from "@/lib/validacao/regras";
-import { validarFoto } from "@/lib/validacao/arquivo";
+import { validarFoto, extensaoSeguraFoto } from "@/lib/validacao/arquivo";
 import { extrairExifFoto } from "@/lib/exif";
 import { limitarAbastecimento, obterIp } from "@/lib/rate-limit";
 import { notificarAlertaCritico } from "@/lib/email/notificar-alerta-critico";
@@ -33,20 +33,6 @@ function parsearJsonSeguro<T>(texto: string | undefined): T | null {
   } catch {
     return null;
   }
-}
-
-// Lista fechada, nunca o valor cru: `foto.type` também é auto-declarado pelo
-// client (assim como `foto.name`), mas aqui só decide uma extensão dentro de
-// um conjunto pequeno e conhecido — não pode carregar nada arbitrário pra
-// dentro da key do Storage, então não precisa da validação por assinatura de
-// bytes que `validarFoto` já fez (essa garante que o CONTEÚDO é imagem;
-// esta função só nomeia o arquivo).
-function extensaoSeguraFoto(mimeType: string): string {
-  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
-  if (mimeType.includes("png")) return "png";
-  if (mimeType.includes("webp")) return "webp";
-  if (mimeType.includes("heic") || mimeType.includes("heif")) return "heic";
-  return "bin";
 }
 
 interface FotoProcessada {
@@ -119,7 +105,7 @@ async function processarFoto(params: {
 // inteiramente neste arquivo, nunca confiando em nada vindo do client além
 // do próprio qr_token.
 export async function POST(request: NextRequest) {
-  const { permitido } = await limitarAbastecimento(obterIp(request));
+  const { permitido } = await limitarAbastecimento(obterIp(request.headers));
   if (!permitido) {
     return NextResponse.json(
       { error: "Muitas tentativas. Aguarde um minuto e tente novamente." },

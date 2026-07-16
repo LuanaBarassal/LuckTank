@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { Database } from "@/types/database";
+import { COOKIE_OPTIONS_SESSAO } from "./cookie-options";
 
 // Usado em Server Components e Server Actions do escritório (sessão do usuário logado, RLS ativo).
 export async function createClient() {
@@ -10,6 +11,7 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: COOKIE_OPTIONS_SESSAO,
       cookies: {
         getAll() {
           return cookieStore.getAll();

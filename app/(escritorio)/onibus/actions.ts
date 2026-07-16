@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -7,8 +8,61 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { registrarLog } from "@/lib/edicoes-log";
 import { verificarPinDoUsuario } from "@/lib/auth/pin";
 import { veiculoEdicaoSchema } from "@/lib/validacao/schemas";
+import { validarFoto, extensaoSeguraFoto } from "@/lib/validacao/arquivo";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
+
+// Upload da foto do veículo — antes rodava direto do Client Component
+// (components/escritorio/veiculo-form.tsx) usando o client do browser com
+// a anon key. Precisou virar Server Action junto do hardening de sessão de
+// 2026-07-16: o cookie de sessão agora é httpOnly, e um cookie httpOnly
+// nunca pode ser lido via `document.cookie` — o client do browser passou a
+// enxergar qualquer requisição como anônima, o que a policy
+// `fotos_veiculos_insert` (0002_cadastros.sql, exige `usuario_empresa_id()`)
+// rejeitaria. Rodando no servidor, a sessão chega normalmente via cookie
+// (httpOnly só bloqueia leitura por JS, nunca o envio automático do
+// navegador pro próprio servidor) e a mesma policy de RLS de Storage
+// continua sendo o gate de verdade — nada muda na segurança do upload em
+// si, só onde o código roda. Reaproveita a mesma validação por assinatura
+// de bytes já usada nas fotos de comprovante (nunca tinha teto de
+// tamanho/tipo nenhum antes desta mudança).
+export async function atualizarFotoVeiculo(
+  id: string,
+  formData: FormData
+): Promise<Resultado<{ url: string }>> {
+  const usuario = await getUsuarioAtual();
+  if (!usuario) return { error: "Não autenticado." };
+  if (!["gerente", "administrador"].includes(usuario.papel)) {
+    return { error: "Você não tem permissão para editar veículos." };
+  }
+
+  const foto = formData.get("foto");
+  if (!(foto instanceof File) || foto.size === 0) {
+    return { error: "Foto inválida." };
+  }
+
+  const buffer = Buffer.from(await foto.arrayBuffer());
+  const validacao = validarFoto(foto, buffer);
+  if (!validacao.valido) {
+    return { error: validacao.erro ?? "Foto inválida." };
+  }
+
+  // Client de SESSÃO (não admin): mantém a mesma policy de RLS de Storage
+  // (`fotos_veiculos_insert`, empresa_id = usuario_empresa_id()) como gate
+  // real — o mesmo isolamento por tenant de antes, só que agora reforçado
+  // no servidor em vez de confiado ao client do browser.
+  const supabase = await createClient();
+  const caminho = `${usuario.empresa_id}/${id}/${randomUUID()}.${extensaoSeguraFoto(foto.type)}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("fotos-veiculos")
+    .upload(caminho, buffer, { contentType: foto.type || "image/jpeg", upsert: true });
+
+  if (uploadError) return { error: "Não foi possível enviar a foto." };
+
+  const { data: publicUrlData } = supabase.storage.from("fotos-veiculos").getPublicUrl(caminho);
+  return { data: { url: publicUrlData.publicUrl } };
+}
 
 // Cadastro de veículo novo saiu daqui — só o LuckTank adiciona veículo a uma
 // empresa agora (ver criarVeiculoParaEmpresa em admin-sistema/actions.ts).

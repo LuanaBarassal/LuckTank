@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-13 (e-mail de notificação por abastecimento via Resend).
+Última atualização: 2026-07-16 (hardening de login: server-side + rate limit + cookie httpOnly + senha mínima).
 
 ## Visão do produto
 
@@ -2941,6 +2941,280 @@ types typescript --linked` (sem aliases de conveniência — nenhum existia no
 arquivo antes desta sessão, apesar do que uma nota antiga de convenção
 sugeria).
 
+## Limpeza de dados de teste em produção (2026-07-13)
+
+Resolve o "achado lateral" que já estava registrado desde o bloco de
+filtros (2026-07-11-ish, seção "Relatório de consumo por veículo"): o
+veículo real `EXM1A23` (Expresso Mundial) tinha, em produção, vários
+abastecimentos de teste que nunca foram limpos — sobras da validação das
+Fases 3-7, de antes da disciplina de "sempre criar tenant descartável e
+limpar depois" virar prática consistente a partir da Fase 8. Conduzido em
+duas etapas obrigatórias (listar → aprovar → remover), nunca em um passo só,
+dado tratar-se de banco de produção com dado real do cliente piloto.
+
+### Etapa 1 — Levantamento
+
+Investigação foi além de filtrar por "Teste" no nome (pedido explícito do
+usuário): cruzando nomes/valores/datas contra o que o próprio PROJETO.md já
+documentava sessão por sessão, achei **14 abastecimentos** de teste no
+EXM1A23, não só os 8 com "Teste" literal no nome — os outros 6 (`Joao da
+Silva`, `Carlos Pereira`, `Ana Lima`, `Roberto Alves`, e 2 lançamentos do
+motorista cadastrado `Marcos Vieira`) batiam exatos com números/CNPJs
+sintéticos citados nas validações das Fases 3, 4 e 7. Efeito cascata
+levantado (13 mídias + arquivos no Storage, 9 alertas) e o impacto nas
+médias calculado ANTES de qualquer remoção (mesma fórmula de
+`lib/onibus/estatisticas.ts`): consumo médio caindo de 7,85 para
+indefinido, já que **removendo todos os "certos" o veículo ficava com só 1
+registro restante** (o duvidoso) — achado crítico mostrado ao usuário antes
+de qualquer aprovação, porque zerar o histórico de um veículo real é um
+efeito colateral grande demais pra não avisar antes.
+
+Um 14º registro (`97d540c8`, 08/07, motorista Marcos Vieira, 100L/R$2.000,
+`valor_litro` implícito de R$20/L) ficou **deliberadamente fora da lista de
+"certos"** — não batia 100% com nenhuma narrativa documentada (o PROJETO.md
+registra que um teste de compressão de foto com esse mesmo motorista foi
+"removido depois e km_atual restaurado para 160000", mas esse registro
+levou o km pra 161000 seis dias depois, o que não bate com a limpeza
+descrita). Marcado como DUVIDOSO e perguntado ao usuário diretamente — a
+mensagem dele trouxe as duas opções lado a lado sem marcar qual escolher,
+então usei `AskUserQuestion` pra confirmar antes de tocar em dado real, em
+vez de assumir. Resposta: remover também (R$20/litro é impossível pra
+diesel).
+
+### Etapa 2 — Remoção
+
+Aprovação recebida por escrito, item a item. Executado via script
+descartável (admin/service role), removido do disco ao final:
+
+- **14 abastecimentos**: **delete físico** (não soft-delete, ver decisão
+  abaixo), com o `id` de cada um reconfirmado batendo `empresa_id`/
+  `veiculo_id` esperados antes de qualquer escrita (trava de segurança
+  contra remover a linha errada).
+- **14 mídias**: arquivo real apagado do Storage (bucket `comprovantes`,
+  `admin.storage.from("comprovantes").remove(...)`) **antes** da linha —
+  se o delete do arquivo falhasse, a linha ficaria pra indicar que ainda
+  havia um arquivo pendente, em vez de perder a referência silenciosamente.
+- **10 alertas** vinculados: delete físico (o 14º registro tinha 1 alerta
+  a mais que os 9 já mapeados na Etapa 1).
+- **`edicoes_log`**: 14 linhas novas, uma por abastecimento removido,
+  `acao: 'delete'`, `antes` = linha completa (JSON), `depois: null`,
+  `usuario_id` = o administrador real da Expresso Mundial
+  (`luwebdesigners@gmail.com` — que é literalmente quem aprovou a remoção
+  nesta conversa, então a atribuição no log é exata, não arbitrária).
+- **`veiculos.km_atual`** do EXM1A23 recalculado a partir do último
+  abastecimento `ativo` restante — como os 14 removidos eram TODOS os que
+  existiam, não sobrou nenhum, então o valor correto é `null` (mesmo estado
+  de um veículo recém-cadastrado sem histórico ainda), não um número
+  qualquer "chutado".
+
+**Por que delete físico em vez de soft-delete** (o padrão do projeto pra
+excluir abastecimento, `excluirAbastecimento` em `onibus/actions.ts`, usa
+soft-delete pra preservar evidência de uma exclusão de negócio legítima):
+aqui não havia negócio nenhum a preservar — são fixtures sintéticas de
+validação, sem valor de evidência. Manter a linha com `status='excluido'`
+só criaria risco residual de algum código esquecido não filtrar por status
+e voltar a poluir alguma tela. O rastro de auditoria continua garantido
+(a linha inteira de cada um está em `edicoes_log.antes`).
+
+### Verificação independente (queries separadas da remoção)
+
+Todos os pontos bateram: 0 dos 14 ids restando em `abastecimentos`, 0 total
+no EXM1A23, `km_atual = null`, 0 mídias/alertas órfãos, 0 arquivos órfãos na
+pasta do veículo no Storage, 14 linhas em `edicoes_log` todas com `antes`
+preenchido e atribuídas ao mesmo `usuario_id`. Consumo médio/custo médio/
+gasto médio do EXM1A23: de 7,85 km/L, R$0,885/km, R$798,94 por abastecimento
+→ **sem dado** (0 abastecimentos reais até aqui). Dashboard/planilha
+viva/exports do veículo devem mostrar o estado vazio até o próximo registro
+real.
+
+### Itens fora do escopo, removidos numa rodada separada (mesmo dia)
+
+Encontrados durante a investigação da Etapa 1, mas propositalmente NÃO
+tocados até o usuário aprovar em separado (regra explícita de não mexer em
+outro tenant sem aval específico):
+
+- **Empresa "Auditoria Cadastros Cliente"** — tenant inteiro de teste (1
+  usuário, 1 veículo `AUDCLI01`, 0 motoristas, 0 abastecimentos), resíduo do
+  script `_setup-auditoria-3-temp.mjs` (nunca commitado, já solto na raiz do
+  repo havia dias). Removido por completo: conta de auth excluída primeiro
+  (`auth.admin.deleteUser`, cascadeia a linha em `usuarios`), empresa
+  excluída depois (cascadeia o veículo). Checagem de segurança prévia
+  (mesmo raciocínio de `excluirUsuario`): 0 rastro em
+  `edicoes_log`/`alertas.resolvido_por`/`abastecimentos.editado_por|
+  excluido_por` pro usuário dessa empresa, então seguro excluir.
+- **Conta órfã `teste-bloco5-temp@example.com`** — só existia em
+  `auth.users` (sem linha em `usuarios`), resíduo da validação do Bloco 5
+  (captura guiada de 3 fotos). `auth.admin.deleteUser` direto.
+- **Script `_setup-auditoria-3-temp.mjs`** — apagado do disco (nunca havia
+  sido commitado).
+- **`edicoes_log` não gravado pra nenhum dos três**: `edicoes_log.empresa_id`
+  tem `on delete cascade` a partir de `empresas` — uma linha de log presa ao
+  `empresa_id` da própria empresa sendo apagada desapareceria junto, no
+  mesmo instante (log que se autodestrói não serve de auditoria). Mesmo
+  problema, mesma decisão, que `admin-sistema/actions.ts` já documenta em
+  `criarEmpresa`/`convidarUsuarioParaEmpresa` (ações do dono do sistema
+  sobre empresa de terceiro não têm um tenant coerente pra anexar o log). O
+  rastro desta operação específica fica só na conversa, não no banco.
+- **Varredura confirmou**: nenhum outro script `_setup-*`/`_listar-*`/
+  `*-temp.mjs` esquecido no repositório além desse um.
+- **"Expresso Mundial Turismo" (segunda empresa real, achada durante a
+  investigação) explicitamente NÃO tocada** — confirmado intacta na
+  verificação final (5 veículos, 1 usuário, sem alteração).
+
+**Verificado**: `tsc --noEmit`, `eslint` e `npm test` (139/139) limpos —
+nenhuma mudança de código nesta operação, só dado em produção. Nenhuma
+migration nova. Todos os scripts descartáveis usados (listagem, cálculo de
+impacto, remoção, verificação) foram apagados do disco ao final de cada
+etapa, nenhum ficou solto no repo.
+
+## Auditoria de segurança 2026-07-16 e hardening de login
+
+Auditoria cética de segurança (checklist de falhas comuns de SaaS: rate
+limit, CORS, PII, sessão/token, enumeração de usuário, headers, SQL
+injection, IDOR, segredos, upload) rodada sobre o código real, item por
+item, com evidência de arquivo/linha — não sobre suposição. A maior parte
+do sistema já estava sólida (RLS consistente em toda tabela sensível,
+storage privado com isolamento em duas camadas, PIN com scrypt + rate
+limit, IDOR checado a fundo em todo endpoint com id vindo de fora sem
+achar brecha, zero SQL cru, zero segredo no bundle do client). Achados
+reais, em ordem de gravidade: (1) login sem rate limit nenhum porque
+rodava 100% no client, direto contra o Supabase Auth, nunca passando pelo
+nosso servidor; (2) cookie de sessão `httpOnly: false` (default da lib
+`@supabase/ssr`) — um XSS futuro (hoje nenhum encontrado) roubaria a
+sessão inteira via `document.cookie`; (3) `/r/[qrToken]` sem rate limit
+(gravidade média, adiado); (4) `'unsafe-inline'` na CSP (baixa, adiado);
+(5) mensagem de convite revela e-mail já cadastrado, mas só pro dono do
+sistema (baixa/informativo, adiado). Corrigidos nesta sessão: itens 1 e 2
+— os dois compartilhavam a mesma raiz (login no client) e foram resolvidos
+juntos.
+
+### Login/logout/definir-senha viraram Server Actions
+
+**Antes**: `components/escritorio/login-form.tsx` chamava
+`supabase.auth.signInWithPassword` direto do client do browser (client
+`lib/supabase/client.ts`, anon key). Duas consequências ruins: nosso
+`lib/rate-limit.ts` nunca via essa chamada (ela nunca toca o nosso
+servidor Next.js), e o cookie de sessão só podia ser escrito via
+`document.cookie` — que **nunca pode ser `httpOnly`**, é restrição do
+próprio navegador, não da lib.
+
+**Depois**: toda mutação de sessão roda em `lib/auth/sessao-actions.ts`
+("use server"): `login`, `logout`, `estabelecerSessaoConvite` (recebe os
+tokens do hash do link de convite/recuperação, que só o JS do browser
+consegue ler, e manda pra cá via HTTPS), `sessaoAtivaConvite`,
+`definirSenha`. `lib/supabase/cookie-options.ts` (novo, sem
+`server-only` de propósito — precisa ser importável tanto de
+`lib/supabase/server.ts` quanto de `middleware.ts`, que roda em Edge
+Runtime) exporta `COOKIE_OPTIONS_SESSAO = { httpOnly: true, secure:
+NODE_ENV === "production", sameSite: "lax" }`, aplicado nos DOIS únicos
+lugares que escrevem o cookie de sessão (middleware.ts precisa do mesmo
+valor — senão o próximo refresh de token desfaz o hardening em silêncio).
+
+**Efeito colateral que precisou de correção junto**: com o cookie
+httpOnly, `lib/supabase/client.ts` (o client do browser) parou de
+conseguir ler QUALQUER sessão — não só login/logout/definir-senha, mas
+qualquer Client Component que fizesse uma chamada autenticada direto
+contra o Supabase. Achado: `components/escritorio/veiculo-form.tsx` fazia
+upload da foto do veículo assim, contra o bucket `fotos-veiculos`
+(policy `fotos_veiculos_insert` exige `usuario_empresa_id()`, ou seja,
+sessão válida). Virou uma Server Action nova, `atualizarFotoVeiculo`
+(`onibus/actions.ts`), que reaproveita `validarFoto`/`extensaoSeguraFoto`
+(agora exportadas de `lib/validacao/arquivo.ts`, antes só usadas dentro de
+`/api/abastecimentos`) — o upload de foto de veículo, que nunca teve teto
+de tamanho nem checagem de assinatura de bytes, ganhou os dois de graça.
+`lib/supabase/client.ts` ficou sem nenhum importador depois dessa
+migração inteira e foi **removido** (não só desconectado).
+
+### Rate limit no login
+
+`lib/rate-limit.ts`: `limitarLogin(ip, email)`, duas chaves checadas em
+paralelo (`Promise.all`, pra não vazar por timing qual delas estourou
+primeiro) — 10 tentativas/10min por IP e 8 tentativas/15min por e-mail.
+Duas chaves porque cada uma cobre um ataque que a outra sozinha deixa
+passar: só por e-mail cobre força bruta contra UMA conta vinda de vários
+IPs; só por IP cobre um IP tentando MUITOS e-mails (credential spraying).
+`obterIp` deixou de exigir um `Request` inteiro — agora aceita qualquer
+`{ get(nome): string|null }`, porque a Server Action de login não recebe
+um `Request`, só `headers()` do `next/headers` (mesma coisa na prática,
+os dois call sites em `/api/ocr` e `/api/abastecimentos` só passaram a
+chamar `obterIp(request.headers)` em vez de `obterIp(request)`). Estourar
+o limite devolve a mesma mensagem genérica sempre (`"Muitas tentativas.
+Aguarde alguns minutos e tente novamente."`), sem contagem regressiva
+nem indicação de qual chave estourou.
+
+### Senha mínima subiu de 6 pra 8 caracteres
+
+`lib/auth/senha.ts` (novo, função pura testável, `lib/auth/senha.test.ts`
+com 5 casos): `TAMANHO_MINIMO_SENHA = 8` + `validarSenha()`, que também
+barra uma lista pequena de senhas triviais conhecidas (`"12345678"`,
+`"senha123"`, etc.) e caractere único repetido (`"aaaaaaaa"`). De
+propósito **sem** exigir maiúscula/símbolo/dígito obrigatórios — critério
+alinhado com NIST 800-63B (comprimento pesa mais que complexidade
+forçada, que na prática só empurra pra padrões previsíveis tipo
+`"Senha123!"`). Aplicado nos dois lugares: `definirSenha()` no servidor
+(o que vale de verdade) e uma checagem local em `definir-senha-form.tsx`
+(só feedback imediato, sem round-trip).
+
+### Validado ponta a ponta (navegador real + Supabase real)
+
+Empresa e usuário de teste descartáveis criados via service role
+(`admin.auth.admin.createUser` + insert em `usuarios`), removidos por
+completo ao final (`empresas`/`usuarios`/`auth.users`/`edicoes_log`),
+confirmado por query independente que não sobrou nada. Testado contra
+`next start` (build de produção local) — `next dev` não serviu pra esse
+teste porque o erro de CSP/`eval()` do Fast Refresh (já documentado nesta
+seção como falso-positivo de dev) quebra a hidratação da página inteira,
+não só o overlay; achado curioso no caminho: um Service Worker de uma
+sessão anterior ainda estava servindo o bundle antigo de `next dev` pro
+`localhost:3000` mesmo depois de trocar pro build de produção — mesmo
+tipo de artefato já visto no Bloco 1 da Fase 8 (SW mascarando o resultado
+de um teste local), resolvido com `unregister()` + limpar `caches`.
+
+- **Login funciona pelo novo caminho server-side**: e-mail/senha corretos
+  → redireciona pro `/dashboard` com dado real (RLS escopado pela nova
+  empresa de teste, vazio como esperado).
+- **Cookie confirmado `httpOnly`**: `document.cookie` retorna string
+  vazia mesmo com a sessão ativa e o dashboard renderizando dado
+  autenticado — é exatamente o teste padrão de `httpOnly` (JS não
+  consegue ler o cookie, mas o servidor reconhece a sessão via header
+  `Cookie` normal, que `httpOnly` nunca bloqueia).
+- **Senha errada**: mensagem genérica `"E-mail ou senha inválidos."`,
+  idêntica à de antes — não diferencia e-mail inexistente de senha errada.
+- **Logout**: redireciona pro `/login`; tentativa de acessar `/dashboard`
+  direto depois confirma `307` de volta pro
+  `/login?redirectTo=%2Fdashboard` — sessão realmente invalidada no
+  servidor, não só limpeza de estado no client.
+- **Convite/recuperação de senha ponta a ponta**: link real gerado via
+  `admin.auth.admin.generateLink({ type: "recovery" })`, aberto no
+  navegador → Supabase valida o token → redireciona pro
+  `/definir-senha` com os tokens no hash → `estabelecerSessaoConvite`
+  estabelece a sessão (cookie httpOnly) → senha de 6 caracteres
+  (`"abc123"`) barrada com `"A senha precisa ter pelo menos 8
+  caracteres."` → senha de 20 caracteres aceita → `"Senha definida!"` →
+  redireciona pro dashboard. Fluxo inteiro (o mesmo usado tanto pra
+  convite de usuário novo quanto pra recuperação de senha) confirmado
+  intacto depois da migração pra Server Actions.
+- `tsc --noEmit`, `eslint` e `npm test` (146 testes, 5 novos de
+  `lib/auth/senha.test.ts`) limpos; `next build` limpo.
+
+**Não testado nesta sessão (limitação de ambiente, não de código)**: o
+rate limit do login estourando de verdade — `.env.local` local não tem
+`UPSTASH_REDIS_REST_URL`/`TOKEN` configuradas, então `limitarLogin` fica
+inerte (sempre libera, mesmo comportamento documentado de todo o resto de
+`lib/rate-limit.ts`). `limitarLogin` reaproveita exatamente o mesmo
+mecanismo (`Ratelimit.slidingWindow` via Upstash) já **confirmado ativo em
+produção** pra `/api/ocr` no Bloco 1 da Fase 8 — mesma classe/API, só
+uma chave/prefixo novos. Se algum dia for preciso confirmar o disparo de
+verdade, precisa rodar contra um ambiente com Upstash configurado (preview
+da Vercel, ou `UPSTASH_REDIS_REST_URL`/`TOKEN` temporárias em
+`.env.local`).
+
+**Adiado de propósito, achados de gravidade menor da mesma auditoria**:
+`'unsafe-inline'` na CSP, rate limit em `/r/[qrToken]`, mensagem de
+convite revelando e-mail já cadastrado (só visível ao dono do sistema,
+impacto baixo) — nenhum desses foi tocado nesta sessão, ficam pra uma
+etapa separada.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
@@ -2986,3 +3260,13 @@ sugeria).
    silencioso em `/api/abastecimentos`). Qualquer regra nova entra em
    `lib/validacao/regras.ts` como função pura (sem query dentro) e é
    avaliada só a partir do contexto já resolvido pelo route handler.
+8. **Nenhuma mutação de sessão (login/logout/aceitar convite/definir
+   senha) chama `supabase.auth.*` direto de um Client Component.** Sempre
+   via Server Action em `lib/auth/sessao-actions.ts`, usando
+   `lib/supabase/server.ts` (que aplica `COOKIE_OPTIONS_SESSAO` —
+   `httpOnly: true`) — nunca reintroduzir `lib/supabase/client.ts` (foi
+   removido de propósito na auditoria de 2026-07-16) nem um client de
+   browser novo com anon key pra autenticação. Se `middleware.ts` for
+   editado, o `cookieOptions` passado ao `createServerClient` ali precisa
+   continuar batendo com `lib/supabase/cookie-options.ts` — divergir os
+   dois desfaz o hardening no próximo refresh de token, em silêncio.

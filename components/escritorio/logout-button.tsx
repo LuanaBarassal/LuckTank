@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { logout } from "@/lib/auth/sessao-actions";
 import { usePinProtegido } from "./pin-context";
 
 export default function LogoutButton() {
@@ -10,8 +10,7 @@ export default function LogoutButton() {
 
   async function handleLogout() {
     bloquear();
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await logout();
     router.push("/login");
     router.refresh();
   }

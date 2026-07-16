@@ -2,8 +2,7 @@
 
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { atualizarVeiculo } from "@/app/(escritorio)/onibus/actions";
+import { atualizarVeiculo, atualizarFotoVeiculo } from "@/app/(escritorio)/onibus/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TIPOS_COMBUSTIVEL, ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/schemas";
@@ -22,14 +21,13 @@ interface VeiculoExistente {
 }
 
 interface VeiculoFormProps {
-  empresaId: string;
   veiculo: VeiculoExistente;
 }
 
 // Só edição — cadastro de veículo novo saiu daqui (ver
 // components/escritorio/criar-veiculo-empresa-form.tsx, usado só pelo dono
 // do sistema em admin-sistema).
-export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
+export default function VeiculoForm({ veiculo }: VeiculoFormProps) {
   const router = useRouter();
   const [prefixo, setPrefixo] = useState(veiculo.prefixo ?? "");
   const [placa, setPlaca] = useState(veiculo.placa);
@@ -60,20 +58,17 @@ export default function VeiculoForm({ empresaId, veiculo }: VeiculoFormProps) {
     let fotoUrl = fotoUrlAtual;
 
     if (fotoFile) {
-      const supabase = createClient();
-      const caminho = `${empresaId}/${veiculo.id}/${Date.now()}-${fotoFile.name}`;
-      const { error: uploadError } = await supabase.storage
-        .from("fotos-veiculos")
-        .upload(caminho, fotoFile, { upsert: true });
+      const formDataFoto = new FormData();
+      formDataFoto.set("foto", fotoFile);
+      const resultadoFoto = await atualizarFotoVeiculo(veiculo.id, formDataFoto);
 
-      if (uploadError) {
-        setErro("Não foi possível enviar a foto.");
+      if (resultadoFoto.error || !resultadoFoto.data) {
+        setErro(resultadoFoto.error ?? "Não foi possível enviar a foto.");
         setEnviando(false);
         return;
       }
 
-      const { data: publicUrlData } = supabase.storage.from("fotos-veiculos").getPublicUrl(caminho);
-      fotoUrl = publicUrlData.publicUrl;
+      fotoUrl = resultadoFoto.data.url;
     }
 
     const payload = {

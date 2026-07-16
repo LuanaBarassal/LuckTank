@@ -2,7 +2,12 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import {
+  estabelecerSessaoConvite,
+  sessaoAtivaConvite,
+  definirSenha as definirSenhaAction,
+} from "@/lib/auth/sessao-actions";
+import { validarSenha } from "@/lib/auth/senha";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { IconeOlho } from "@/components/ui/icone-olho";
@@ -28,21 +33,21 @@ export default function DefinirSenhaForm() {
 
   useEffect(() => {
     async function processarLink() {
-      const supabase = createClient();
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
       const accessToken = hash.get("access_token");
       const refreshToken = hash.get("refresh_token");
 
       if (accessToken && refreshToken) {
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
+        // Os tokens só existem no HASH da URL (só o JS do browser consegue
+        // ler) — mandados aqui pra Server Action via HTTPS (não na URL/log
+        // nenhum) porque só o client server-side consegue estabelecer a
+        // sessão com o cookie httpOnly (ver lib/auth/sessao-actions.ts).
+        const resultado = await estabelecerSessaoConvite(accessToken, refreshToken);
         // Limpa o hash da URL (contém tokens sensíveis) assim que a sessão
         // é estabelecida — não deixa o token visível/copiável na barra de
         // endereço depois de usado.
         window.history.replaceState(null, "", window.location.pathname);
-        if (error) {
+        if (resultado.error) {
           setEstado("invalido");
           return;
         }
@@ -52,10 +57,8 @@ export default function DefinirSenhaForm() {
 
       // Sem hash (ex.: usuário recarregou a página) — só segue se já
       // existir uma sessão válida de antes.
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      setEstado(user ? "pronto" : "invalido");
+      const ativa = await sessaoAtivaConvite();
+      setEstado(ativa ? "pronto" : "invalido");
     }
 
     processarLink();
@@ -65,8 +68,12 @@ export default function DefinirSenhaForm() {
     event.preventDefault();
     setErro(null);
 
-    if (senha.length < 6) {
-      setErro("A senha precisa ter pelo menos 6 caracteres.");
+    // Checagem local só pra feedback imediato (sem round-trip) — quem
+    // decide de verdade é sempre `definirSenhaAction` no servidor, mesma
+    // regra (lib/auth/senha.ts), nunca confiar só na validação do client.
+    const validacao = validarSenha(senha);
+    if (!validacao.valida) {
+      setErro(validacao.erro ?? "Senha inválida.");
       return;
     }
     if (senha !== confirmarSenha) {
@@ -75,12 +82,11 @@ export default function DefinirSenhaForm() {
     }
 
     setEnviando(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password: senha });
+    const resultado = await definirSenhaAction(senha, confirmarSenha);
     setEnviando(false);
 
-    if (error) {
-      setErro("Não foi possível definir a senha. Tente pedir um novo convite.");
+    if (resultado.error) {
+      setErro(resultado.error);
       return;
     }
 

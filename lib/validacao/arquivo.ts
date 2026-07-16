@@ -58,3 +58,17 @@ export function validarFoto(file: File, buffer: Buffer): ResultadoValidacaoFoto 
 
   return { valido: true };
 }
+
+// Lista fechada, nunca o valor cru: `mimeType` é auto-declarado pelo
+// client (assim como `foto.name`), mas aqui só decide uma extensão dentro
+// de um conjunto pequeno e conhecido — não pode carregar nada arbitrário
+// pra dentro da key do Storage. Compartilhado entre todo upload de foto do
+// projeto (comprovante de abastecimento e foto de veículo) — um só lugar
+// de verdade pra "que extensão esse mime vira".
+export function extensaoSeguraFoto(mimeType: string): string {
+  if (mimeType.includes("jpeg") || mimeType.includes("jpg")) return "jpg";
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("heic") || mimeType.includes("heif")) return "heic";
+  return "bin";
+}

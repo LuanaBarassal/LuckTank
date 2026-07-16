@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { COOKIE_OPTIONS_SESSAO } from "@/lib/supabase/cookie-options";
 
 // Rotas públicas: "/" (redirect pro login), fluxo do motorista (QR, sem
 // login), a própria página de login, e /definir-senha (link de convite —
@@ -31,6 +32,7 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: COOKIE_OPTIONS_SESSAO,
       cookies: {
         getAll() {
           return request.cookies.getAll();

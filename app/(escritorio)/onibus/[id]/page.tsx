@@ -209,7 +209,7 @@ export default async function VeiculoDetalhePage({
         <Card variant="dark">
           <CardTitle variant="dark">Dados do veículo</CardTitle>
           {podeEditar ? (
-            <VeiculoForm empresaId={usuario.empresa_id} veiculo={veiculo} />
+            <VeiculoForm veiculo={veiculo} />
           ) : (
             <p className="text-sm text-slate-400">
               Você não tem permissão para editar este veículo.

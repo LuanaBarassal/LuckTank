@@ -48,11 +48,34 @@ const limitePin = redis
   ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "5 m"), prefix: "lucktank:pin" })
   : null;
 
-export function obterIp(request: Request): string {
+// Login (achado da auditoria 2026-07-16: antes rodava 100% no client,
+// direto contra o Supabase Auth, sem passar pelo nosso servidor — nosso
+// rate limit não alcançava). DUAS chaves, checadas juntas, porque cada
+// uma cobre um padrão de ataque que a outra sozinha deixa passar: só por
+// e-mail (com muitos IPs/proxy rotativo, força bruta contra UMA conta) e
+// só por IP (um IP tentando MUITOS e-mails, credential spraying). 10/10min
+// por IP e 8/15min por e-mail são conservadores o bastante pra travar
+// automação sem incomodar alguém que errou a senha 2-3 vezes de verdade.
+const limiteLoginPorIp = redis
+  ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(10, "10 m"), prefix: "lucktank:login:ip" })
+  : null;
+const limiteLoginPorEmail = redis
+  ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(8, "15 m"), prefix: "lucktank:login:email" })
+  : null;
+
+// Aceita qualquer objeto com `.get(nome)` (a `Headers` de uma
+// NextRequest/Request E a `ReadonlyHeaders` devolvida por `headers()` do
+// `next/headers`, usada dentro de Server Actions como o login — que não
+// recebem um `Request` pra extrair o IP).
+interface HeadersLegiveis {
+  get(nome: string): string | null;
+}
+
+export function obterIp(headersOrigem: HeadersLegiveis): string {
   // Vercel injeta x-forwarded-for; pega o primeiro IP da cadeia (o do cliente).
-  const encaminhado = request.headers.get("x-forwarded-for");
+  const encaminhado = headersOrigem.get("x-forwarded-for");
   if (encaminhado) return encaminhado.split(",")[0].trim();
-  return request.headers.get("x-real-ip") ?? "desconhecido";
+  return headersOrigem.get("x-real-ip") ?? "desconhecido";
 }
 
 export interface ResultadoLimite {
@@ -75,4 +98,18 @@ export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
   if (!limitePin) return { permitido: true };
   const { success } = await limitePin.limit(usuarioId);
   return { permitido: success };
+}
+
+// Conta a tentativa (sucesso ou falha — o `.limit()` do Upstash sempre
+// incrementa) contra as duas chaves; barra se QUALQUER uma estourar. Chama
+// as duas em paralelo mesmo que a primeira já tenha estourado, de propósito:
+// senão o tempo de resposta do login variaria conforme qual chave bateu o
+// limite primeiro, um side-channel bobo mas evitável de graça.
+export async function limitarLogin(ip: string, email: string): Promise<ResultadoLimite> {
+  if (!limiteLoginPorIp || !limiteLoginPorEmail) return { permitido: true };
+  const [porIp, porEmail] = await Promise.all([
+    limiteLoginPorIp.limit(ip),
+    limiteLoginPorEmail.limit(email.trim().toLowerCase()),
+  ]);
+  return { permitido: porIp.success && porEmail.success };
 }
