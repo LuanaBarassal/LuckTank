@@ -63,6 +63,29 @@ const limiteLoginPorEmail = redis
   ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(8, "15 m"), prefix: "lucktank:login:email" })
   : null;
 
+// Recuperação de senha ("esqueci minha senha"): mais apertado que login de
+// propósito — diferente de errar senha (ação sem custo nenhum pro sistema),
+// cada chamada legítima aqui dispara um e-mail de verdade (custo de
+// reputação/cota do Resend) e é um vetor natural de sondagem de e-mails
+// cadastrados se não fosse limitado. 5/15min por IP, 3/30min por e-mail —
+// folgado o bastante pra alguém que clicou "reenviar" umas 2 vezes de
+// verdade, apertado o bastante pra inviabilizar varredura de lista de
+// e-mails.
+const limiteRecuperacaoSenhaPorIp = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(5, "15 m"),
+      prefix: "lucktank:recuperacao:ip",
+    })
+  : null;
+const limiteRecuperacaoSenhaPorEmail = redis
+  ? new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(3, "30 m"),
+      prefix: "lucktank:recuperacao:email",
+    })
+  : null;
+
 // Aceita qualquer objeto com `.get(nome)` (a `Headers` de uma
 // NextRequest/Request E a `ReadonlyHeaders` devolvida por `headers()` do
 // `next/headers`, usada dentro de Server Actions como o login — que não
@@ -110,6 +133,22 @@ export async function limitarLogin(ip: string, email: string): Promise<Resultado
   const [porIp, porEmail] = await Promise.all([
     limiteLoginPorIp.limit(ip),
     limiteLoginPorEmail.limit(email.trim().toLowerCase()),
+  ]);
+  return { permitido: porIp.success && porEmail.success };
+}
+
+// Mesmo padrão de duas chaves em paralelo do login — ver comentário ali.
+// Diferente do login, estourar este limite NUNCA aparece pro chamador como
+// um motivo distinto: lib/auth/sessao-actions.ts (`solicitarRecuperacaoSenha`)
+// devolve a MESMA mensagem genérica de sempre, sem revelar que o motivo foi
+// rate limit em vez de e-mail não cadastrado — uma mensagem diferente aqui
+// seria, ela mesma, um oráculo (via timing ou texto) de "esse e-mail existe
+// e já foi tentado antes").
+export async function limitarRecuperacaoSenha(ip: string, email: string): Promise<ResultadoLimite> {
+  if (!limiteRecuperacaoSenhaPorIp || !limiteRecuperacaoSenhaPorEmail) return { permitido: true };
+  const [porIp, porEmail] = await Promise.all([
+    limiteRecuperacaoSenhaPorIp.limit(ip),
+    limiteRecuperacaoSenhaPorEmail.limit(email.trim().toLowerCase()),
   ]);
   return { permitido: porIp.success && porEmail.success };
 }

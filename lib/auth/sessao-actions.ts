@@ -2,14 +2,15 @@
 
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { limitarLogin, obterIp } from "@/lib/rate-limit";
+import { limitarLogin, limitarRecuperacaoSenha, obterIp } from "@/lib/rate-limit";
+import { urlBaseAtual } from "@/lib/url-atual";
 import { validarSenha } from "./senha";
 
 // Toda mutação de sessão do escritório (login, logout, aceitar convite,
-// definir senha) roda AQUI, no servidor — nunca mais o Client Component
-// chamando `supabase.auth.*` direto contra o Supabase Auth (era assim até
-// a auditoria de 2026-07-16). Dois motivos, os dois achados de maior
-// gravidade daquela auditoria:
+// solicitar/concluir recuperação de senha) roda AQUI, no servidor — nunca
+// mais o Client Component chamando `supabase.auth.*` direto contra o
+// Supabase Auth (era assim até a auditoria de 2026-07-16). Dois motivos,
+// os dois achados de maior gravidade daquela auditoria:
 // 1) só passando pelo nosso servidor dá pra aplicar lib/rate-limit.ts — o
 //    client do browser nunca toca nosso Next.js, então nosso rate limit
 //    simplesmente não existia pro login.
@@ -64,6 +65,64 @@ export async function login(email: string, senha: string): Promise<ResultadoAcao
 export async function logout(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+}
+
+const MENSAGEM_RECUPERACAO_SENHA =
+  "Se este e-mail estiver cadastrado, enviamos um link de recuperação.";
+// Piso de tempo de resposta: a chamada real ao Supabase (quando o e-mail
+// existe e o rate limit libera) inclui um round-trip de rede real; sem
+// esse piso, um e-mail inexistente (resposta imediata, sem chamada nenhuma)
+// responderia visivelmente mais rápido que um cadastrado — um side-channel
+// de timing que denunciaria existência de conta mesmo com a MESMA
+// mensagem no corpo. 700ms é folgado o bastante pra cobrir o pior caso
+// observado da chamada real em dev.
+const TEMPO_MINIMO_RESPOSTA_MS = 700;
+const REGEX_EMAIL_BASICO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function aguardarTempoMinimo(inicio: number): Promise<void> {
+  const decorrido = Date.now() - inicio;
+  if (decorrido < TEMPO_MINIMO_RESPOSTA_MS) {
+    await new Promise((resolve) => setTimeout(resolve, TEMPO_MINIMO_RESPOSTA_MS - decorrido));
+  }
+}
+
+// "Esqueci minha senha" — usa o mecanismo NATIVO do Supabase Auth
+// (`resetPasswordForEmail`), que já é anti-enumeração por design (sempre
+// responde sucesso pro SDK, exista ou não o e-mail) — não inventa token
+// nem tabela nova. O e-mail em si sai pelo Custom SMTP (Resend,
+// `luckfrotas.com.br`) já configurado no painel do Supabase, com o
+// template navy em `supabase/email-templates/redefinir-senha.html`.
+//
+// Contrato desta função: SEMPRE devolve a mesma mensagem, no mesmo
+// formato, com o mesmo piso de tempo — não importa se o e-mail existe,
+// está mal formado, ou se o rate limit acabou de estourar. É essa
+// uniformidade (não o `resetPasswordForEmail` em si) que fecha a
+// enumeração de verdade; qualquer desvio (mensagem diferente, retorno
+// antecipado) reabre o oráculo.
+export async function solicitarRecuperacaoSenha(email: string): Promise<{ mensagem: string }> {
+  const inicio = Date.now();
+  const emailNormalizado = typeof email === "string" ? email.trim() : "";
+
+  if (emailNormalizado && REGEX_EMAIL_BASICO.test(emailNormalizado)) {
+    const headersList = await headers();
+    const ip = obterIp(headersList);
+
+    const { permitido } = await limitarRecuperacaoSenha(ip, emailNormalizado);
+    if (permitido) {
+      const supabase = await createClient();
+      const base = await urlBaseAtual();
+      // Nunca lança: falha aqui (Resend fora do ar, e-mail inexistente,
+      // erro de rede) não pode virar um caminho de resposta diferente —
+      // sempre cai no mesmo `aguardarTempoMinimo` + mensagem genérica
+      // abaixo, sucesso ou não.
+      await supabase.auth
+        .resetPasswordForEmail(emailNormalizado, { redirectTo: `${base}/definir-senha` })
+        .catch(() => {});
+    }
+  }
+
+  await aguardarTempoMinimo(inicio);
+  return { mensagem: MENSAGEM_RECUPERACAO_SENHA };
 }
 
 // Recebe os tokens que o Supabase manda no HASH da URL do link de
@@ -122,7 +181,7 @@ export async function definirSenha(
 
   const { error } = await supabase.auth.updateUser({ password: novaSenha });
   if (error) {
-    return { error: "Não foi possível definir a senha. Tente pedir um novo convite." };
+    return { error: "Não foi possível definir a senha. Tente pedir um novo link." };
   }
 
   return {};

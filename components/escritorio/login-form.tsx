@@ -105,6 +105,13 @@ export default function LoginForm() {
               }
             />
 
+            <a
+              href="/esqueci-senha"
+              className="-mt-2 self-end text-sm font-medium text-cyan-700 underline-offset-2 hover:underline"
+            >
+              Esqueci minha senha
+            </a>
+
             {erro && (
               <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
                 {erro}

@@ -3,15 +3,18 @@ import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE_OPTIONS_SESSAO } from "@/lib/supabase/cookie-options";
 
 // Rotas públicas: "/" (redirect pro login), fluxo do motorista (QR, sem
-// login), a própria página de login, e /definir-senha (link de convite —
-// chega com os tokens só no HASH da URL, que nunca vai pro servidor; nesse
-// primeiro carregamento o middleware sempre veria "sem sessão", então essa
-// rota PRECISA ser pública, senão o middleware redireciona pro /login antes
-// do client conseguir ler o hash e completar o login). Tudo o mais é
+// login), a própria página de login, /esqueci-senha (formulário que pede
+// o e-mail — quem ainda não tem sessão precisa acessar isso), e
+// /definir-senha (link de convite OU de recuperação de senha — chega com
+// os tokens só no HASH da URL, que nunca vai pro servidor; nesse primeiro
+// carregamento o middleware sempre veria "sem sessão", então essa rota
+// PRECISA ser pública, senão o middleware redireciona pro /login antes do
+// client conseguir ler o hash e completar o login). Tudo o mais é
 // escritório e exige sessão autenticada (RLS resolve empresa_id).
 const PUBLICAS = [
   "/",
   "/login",
+  "/esqueci-senha",
   "/definir-senha",
   "/r",
   "/privacidade",

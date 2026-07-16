@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-16 (hardening de login: server-side + rate limit + cookie httpOnly + senha mínima).
+Última atualização: 2026-07-16 (fluxo "esqueci minha senha" self-service + fix de PWA no manifest).
 
 ## Visão do produto
 
@@ -3223,6 +3223,109 @@ convite revelando e-mail já cadastrado (só visível ao dono do sistema,
 impacto baixo) — nenhum desses foi tocado nesta sessão, ficam pra uma
 etapa separada.
 
+## Fluxo "Esqueci minha senha" self-service (2026-07-16)
+
+Reaproveita 100% da fundação do hardening de login acima — nasceu
+seguro, nenhuma peça nova de autenticação foi inventada. Feito em dois
+blocos.
+
+**Bloco 1 — solicitar recuperação.** `app/esqueci-senha/page.tsx` +
+`components/escritorio/esqueci-senha-form.tsx`: tela pública nova (link
+"Esqueci minha senha" no `/login`), pede só o e-mail. Server Action
+`solicitarRecuperacaoSenha` (`lib/auth/sessao-actions.ts`) usa o
+mecanismo NATIVO do Supabase (`resetPasswordForEmail`, já
+anti-enumeração por design) — sem token/tabela inventados. Três camadas
+de proteção contra enumeração de e-mail, todas com a MESMA saída sempre:
+1. **Mensagem sempre idêntica** — `"Se este e-mail estiver cadastrado,
+   enviamos um link de recuperação."` — sucesso, e-mail inexistente,
+   malformado ou rate limit estourado, tudo cai na mesma resposta.
+2. **Piso de tempo de resposta de 700ms** (`TEMPO_MINIMO_RESPOSTA_MS`) —
+   sem isso, o round-trip real do envio (quando o e-mail existe) seria
+   visivelmente mais lento que a resposta imediata pra e-mail
+   inexistente, um side-channel de timing que denunciaria a conta mesmo
+   com o texto idêntico.
+3. **Rate limit** (`lib/rate-limit.ts`, `limitarRecuperacaoSenha`) —
+   5/15min por IP + 3/30min por e-mail (mais apertado que o login: cada
+   chamada legítima aqui dispara e-mail de verdade, custo de
+   reputação/cota).
+
+**Bloco 2 — redefinir pelo link.** Reaproveita a MESMA tela/Server
+Actions do fluxo de convite (`components/escritorio/definir-senha-form.tsx`,
+`estabelecerSessaoConvite`/`definirSenha`) — o link de recuperação chega
+exatamente do mesmo jeito que o de convite (tokens no hash da URL), então
+não nasceu nada novo, só um `tipoLink` (lido do parâmetro `type` que o
+Supabase manda junto no hash: `"recovery"` vs `"invite"`) pra trocar o
+texto da tela ("Redefina sua senha" vs "Defina sua senha"). Mesma regra
+de senha mínima (`lib/auth/senha.ts`, 8 caracteres + bloqueio de
+triviais) — nenhuma duplicação, é a mesma função chamada pelo convite.
+
+**Bug real achado e corrigido durante a validação**: reusar um link já
+usado (ou expirado) mostrava o formulário de novo em vez de "link
+inválido", SE o navegador ainda tivesse uma sessão válida de qualquer
+uso anterior (ex.: a própria troca de senha que acabou de rodar na mesma
+aba) — o Supabase já rejeita o token reusado e manda `error`/`error_code`
+(`otp_expired`) de volta no hash, mas o código só checava
+`access_token`/`refresh_token`; sem achar nenhum dos dois, caía direto no
+fallback "já existe sessão válida?" (pensado pra reload de página no meio
+do fluxo), que por acaso também era verdadeiro. Não era uma falha de
+segurança (a sessão ali já era legítima, não veio do token reusado), mas
+a mensagem estava errada. Corrigido: checa `hash.get("error")` ANTES do
+fallback de sessão — link reusado agora sempre mostra "Link inválido ou
+expirado" com um caminho pra pedir outro (`/esqueci-senha`),
+independente de sessão preexistente.
+
+**Achado de infraestrutura, não de código, durante a validação**: o
+Custom SMTP do Supabase (Resend) parecia quebrado — e-mail de teste pro
+`luckfrotas@gmail.com` "não chegou". Diagnóstico (chamada direta ao
+`resetPasswordForEmail` sem engolir erro + e-mail de teste mandado direto
+pelo Resend, bypassando o Supabase) confirmou: Resend entrega normal
+(`last_event: "delivered"` na API), Supabase aceita o pedido sem erro —
+era só **atraso de entrega** (comum na primeira entrega a um relay pouco
+usado, Gmail segura pra avaliar reputação) — chegou alguns minutos
+depois. Sem ação necessária, SMTP está saudável.
+
+**Achado de metodologia de teste (real, esse sim)**: o primeiro teste com
+e-mail real foi disparado a partir do `next start` LOCAL (não da
+produção) — `lib/url-atual.ts` resolveu `redirectTo` como
+`http://localhost:3000/definir-senha` (o Host da requisição local), que
+não bate com nenhuma URL permitida no projeto Supabase real. O Supabase
+não erra nesse caso — silenciosamente cai pro "Site URL" configurado no
+painel (a raiz de produção, `luck-tank.vercel.app/`), sem token nenhum no
+hash. Resultado: o link levava pra **landing page de vendas** (`/`, "Pare
+de descobrir fraude de combustível pelo extrato do fim do mês.") em vez
+da tela de redefinir senha — o que a usuária relatou ver. **Lição: nunca
+disparar um fluxo de e-mail com link de redirect a partir do `next
+start`/`next dev` local quando quem vai clicar o link é outro
+dispositivo** — o `redirectTo` sai apontando pro Host da máquina local,
+inútil (e potencialmente confuso) em qualquer outro aparelho. Testar
+esse tipo de fluxo sempre a partir do domínio de produção real, ou usar
+`admin.auth.admin.generateLink()` (que devolve o link pronto sem
+depender de Host nenhum) quando o objetivo é só validar a tela de
+destino, não a entrega de e-mail em si.
+
+**Achado real e corrigido, PWA (`app/manifest.ts`)**: com o app instalado
+como PWA, abrir o link do e-mail de recuperação por fora (app de e-mail)
+podia reaproveitar a janela do PWA já aberto e navegar pro `start_url`
+do manifest (a landing page em `/`) em vez da URL real do link clicado —
+descartando o hash com o token. Corrigido com
+`launch_handler: { client_mode: "navigate-new" }`, que instrui o
+navegador a abrir a URL real do link recebido em vez de cair no
+`start_url`. **Limitação de plataforma, sem solução no código**: essa
+API (Launch Handler) só existe em navegadores Chromium (Android/desktop)
+— Safari/iOS não implementa. Em iPhone, o caminho seguro pra abrir um
+link de convite/recuperação continua sendo "Abrir no navegador" (tocar e
+segurar o link → escolher abrir no Safari/Chrome em vez de deixar abrir
+no app instalado), nunca deixar o sistema decidir sozinho.
+
+**Validado**: ver o histórico da conversa (não repetido aqui em detalhe)
+— e-mail inexistente vs. conta real (`luckfrotas@gmail.com`) com mensagem
+e timing praticamente idênticos (998ms vs. 1000ms), rate limit
+confirmado no Redis real (Upstash) capando em 3/30min por e-mail, senha
+curta rejeitada / válida aceita na redefinição (conta descartável),
+reuso de link corretamente barrado depois da correção, login com senha
+antiga falhando e com a nova funcionando. `tsc`, `lint`, `test` (146),
+`build` limpos.
+
 ## Regras invariantes (não podem quebrar)
 
 1. **RLS isola por empresa.** Toda leitura do escritório passa pelas
@@ -3268,8 +3371,9 @@ etapa separada.
    silencioso em `/api/abastecimentos`). Qualquer regra nova entra em
    `lib/validacao/regras.ts` como função pura (sem query dentro) e é
    avaliada só a partir do contexto já resolvido pelo route handler.
-8. **Nenhuma mutação de sessão (login/logout/aceitar convite/definir
-   senha) chama `supabase.auth.*` direto de um Client Component.** Sempre
+8. **Nenhuma mutação de sessão (login/logout/aceitar convite/solicitar ou
+   concluir recuperação de senha) chama `supabase.auth.*` direto de um
+   Client Component.** Sempre
    via Server Action em `lib/auth/sessao-actions.ts`, usando
    `lib/supabase/server.ts` (que aplica `COOKIE_OPTIONS_SESSAO` —
    `httpOnly: true`) — nunca reintroduzir `lib/supabase/client.ts` (foi
