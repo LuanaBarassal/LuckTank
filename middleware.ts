@@ -28,6 +28,21 @@ function ehRotaPublica(pathname: string) {
   return PUBLICAS.some((rota) => pathname === rota || (rota !== "/" && pathname.startsWith(`${rota}/`)));
 }
 
+// Incidente 2026-09-07: Supabase lento/instável travou a chamada de rede
+// abaixo (sem timeout, e este middleware roda em ~toda rota) até o Vercel
+// matar a função por inteiro (504 MIDDLEWARE_INVOCATION_TIMEOUT) — um
+// serviço externo derrubando o site inteiro. `symbol` como sentinela
+// distingue "expirou" de qualquer valor real (incluindo `null`/`undefined`)
+// que a promise resolva.
+const EXPIROU = Symbol("timeout");
+
+async function comTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof EXPIROU> {
+  return Promise.race([
+    promise,
+    new Promise<typeof EXPIROU>((resolve) => setTimeout(() => resolve(EXPIROU), ms)),
+  ]);
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -51,9 +66,22 @@ export async function middleware(request: NextRequest) {
     }
   );
 
+  // Timeout curto + fail-open: o Supabase é uma dependência externa, e uma
+  // lentidão/instabilidade dele nunca pode travar o middleware — que roda em
+  // ~toda rota — a ponto do Vercel matar a função (504
+  // MIDDLEWARE_INVOCATION_TIMEOUT) e derrubar o site inteiro. Se a checagem
+  // não voltar a tempo, deixa a requisição passar: quem não tem sessão de
+  // verdade esbarra no RLS ao tentar ler dados de qualquer forma, então isso
+  // não abre acesso real — só evita que uma instabilidade externa vire
+  // indisponibilidade total do site.
+  const resultadoAuth = await comTimeout(supabase.auth.getUser(), 3000);
+  if (resultadoAuth === EXPIROU) {
+    console.error("[middleware] timeout ao verificar sessao no Supabase - liberando requisicao (fail-open)");
+    return response;
+  }
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = resultadoAuth;
 
   if (!ehRotaPublica(request.nextUrl.pathname) && !user) {
     const loginUrl = new URL("/login", request.url);
