@@ -9,6 +9,7 @@ import {
   aplicarFiltrosQuery,
 } from "@/lib/filtros/abastecimentos";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
+import { buscarTodasLinhas } from "@/lib/supabase/paginar";
 import { formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { ROTULO_REGRA } from "@/lib/validacao/rotulos";
 import { baixarFotoComprovante } from "@/lib/midias";
@@ -62,43 +63,57 @@ export async function GET(request: NextRequest) {
     opcoesMotorista.filter((o) => o.value.startsWith("id:")).map((o) => [o.value.slice(3), o.label])
   );
 
-  const { data: abastecimentos } = await aplicarFiltrosQuery(
-    supabase
-      .from("abastecimentos")
-      .select(
-        "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, posto_nome, posto_cidade, numero_nota, veiculo_id, motorista_id, motorista_nome_livre"
-      )
-      .eq("status", "ativo"),
-    filtros,
-    periodo
-  ).order("data_abastecimento", { ascending: true });
-
-  const lista = abastecimentos ?? [];
+  // Paginado — ver lib/supabase/paginar.ts. Sem isso, o teto default do
+  // PostgREST (1000 linhas) truncaria em silêncio o export financeiro de uma
+  // empresa com histórico grande — achado de auditoria, grave justamente
+  // porque o export existe pra auditoria.
+  const lista = await buscarTodasLinhas((inicio, fim) =>
+    aplicarFiltrosQuery(
+      supabase
+        .from("abastecimentos")
+        .select(
+          "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, posto_nome, posto_cidade, numero_nota, veiculo_id, motorista_id, motorista_nome_livre"
+        )
+        .eq("status", "ativo"),
+      filtros,
+      periodo
+    )
+      .order("data_abastecimento", { ascending: true })
+      .range(inicio, fim)
+  );
   const idsAbastecimentos = lista.map((a) => a.id);
 
-  const [{ data: alertasBrutos }, { data: midiasBrutas }] = await Promise.all([
+  // idsAbastecimentos pode passar de 1000 num histórico grande — o `.in()`
+  // abaixo também está sujeito ao mesmo teto do PostgREST, por isso também
+  // paginado em vez de um único `await`.
+  const [alertasBrutos, midiasBrutas] = await Promise.all([
     idsAbastecimentos.length
-      ? supabase
-          .from("alertas")
-          .select("entidade_id, tipo_regra")
-          .eq("entidade_tipo", "abastecimento")
-          .in("entidade_id", idsAbastecimentos)
-      : Promise.resolve({ data: [] as { entidade_id: string; tipo_regra: string }[] }),
+      ? buscarTodasLinhas<{ entidade_id: string; tipo_regra: string }>((inicio, fim) =>
+          supabase
+            .from("alertas")
+            .select("entidade_id, tipo_regra")
+            .eq("entidade_tipo", "abastecimento")
+            .in("entidade_id", idsAbastecimentos)
+            .range(inicio, fim)
+        )
+      : Promise.resolve([]),
     idsAbastecimentos.length
-      ? supabase
-          .from("midias")
-          .select("id, entidade_id, tipo, url, criado_em")
-          .eq("entidade_tipo", "abastecimento")
-          .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
-          .in("entidade_id", idsAbastecimentos)
-          .order("criado_em", { ascending: false })
-      : Promise.resolve({
-          data: [] as { id: string; entidade_id: string; tipo: string; url: string; criado_em: string }[],
-        }),
+      ? buscarTodasLinhas<{ id: string; entidade_id: string; tipo: string; url: string; criado_em: string }>(
+          (inicio, fim) =>
+            supabase
+              .from("midias")
+              .select("id, entidade_id, tipo, url, criado_em")
+              .eq("entidade_tipo", "abastecimento")
+              .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
+              .in("entidade_id", idsAbastecimentos)
+              .order("criado_em", { ascending: false })
+              .range(inicio, fim)
+        )
+      : Promise.resolve([]),
   ]);
 
   const mapaAlertas = new Map<string, string[]>();
-  for (const alerta of alertasBrutos ?? []) {
+  for (const alerta of alertasBrutos) {
     const atual = mapaAlertas.get(alerta.entidade_id) ?? [];
     atual.push(ROTULO_REGRA[alerta.tipo_regra] ?? alerta.tipo_regra);
     mapaAlertas.set(alerta.entidade_id, atual);
@@ -111,7 +126,7 @@ export async function GET(request: NextRequest) {
     string,
     { cupom?: { id: string; url: string }; bomba?: { id: string; url: string }; hodometro?: { id: string; url: string } }
   >();
-  for (const midia of midiasBrutas ?? []) {
+  for (const midia of midiasBrutas) {
     const atual = mapaMidias.get(midia.entidade_id) ?? {};
     if (midia.tipo === "foto_comprovante" && !atual.cupom) atual.cupom = { id: midia.id, url: midia.url };
     else if (midia.tipo === "foto_bomba" && !atual.bomba) atual.bomba = { id: midia.id, url: midia.url };

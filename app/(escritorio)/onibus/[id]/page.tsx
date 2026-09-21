@@ -23,6 +23,7 @@ import {
   aplicarFiltrosQuery,
 } from "@/lib/filtros/abastecimentos";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
+import { buscarTodasLinhas } from "@/lib/supabase/paginar";
 import { cn } from "@/lib/utils";
 
 const LIMITE_TABELA = 50;
@@ -70,20 +71,24 @@ export default async function VeiculoDetalhePage({
   const { opcoesMotorista } = await buscarOpcoesFiltro(supabase);
 
   // Estatísticas são sobre o período filtrado (não mais "todo o histórico" —
-  // ver Bloco 1 de filtros no PROJETO.md), mas ainda sem `limit`: a conta de
-  // soma/soma precisa de todos os registros do período, não só os que
-  // aparecem na página da tabela.
-  const { data: historicoFiltrado } = await aplicarFiltrosQuery(
-    supabase
-      .from("abastecimentos")
-      .select("data_abastecimento, km_rodado, litros, valor_total")
-      .eq("status", "ativo"),
-    filtros,
-    periodo
+  // ver Bloco 1 de filtros no PROJETO.md): a conta de soma/soma precisa de
+  // todos os registros do período, não só os que aparecem na página da
+  // tabela — por isso paginado (lib/supabase/paginar.ts) em vez de um único
+  // `await` sem `limit`, que ficaria sujeito ao teto default de 1000 linhas
+  // do PostgREST e sub-contaria um veículo com histórico grande.
+  const historicoFiltrado = await buscarTodasLinhas((inicio, fim) =>
+    aplicarFiltrosQuery(
+      supabase
+        .from("abastecimentos")
+        .select("data_abastecimento, km_rodado, litros, valor_total")
+        .eq("status", "ativo"),
+      filtros,
+      periodo
+    ).range(inicio, fim)
   );
 
   const estatisticas = calcularEstatisticasVeiculo(
-    (historicoFiltrado ?? []) as AbastecimentoParaEstatistica[]
+    historicoFiltrado as AbastecimentoParaEstatistica[]
   );
 
   const { data: abastecimentos } = await aplicarFiltrosQuery(

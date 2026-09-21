@@ -1,8 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import ListaAlertas, { type AlertaComContexto } from "@/components/escritorio/lista-alertas";
 import { formatarVeiculo } from "@/lib/formatacao";
+import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 
 export default async function AlertasPage() {
+  const usuario = await getUsuarioAtual();
+  // Migration 0018 restringiu quem pode resolver alerta a gerente/
+  // administrador — sem isto, um supervisor veria o botão "Resolver" e
+  // levaria um erro de permissão ao clicar.
+  const podeResolver = usuario?.papel === "gerente" || usuario?.papel === "administrador";
+
   const supabase = await createClient();
 
   const { data: alertas } = await supabase
@@ -49,7 +56,7 @@ export default async function AlertasPage() {
   return (
     <div>
       <h1 className="mb-6 font-title text-2xl font-bold text-white">Alertas</h1>
-      <ListaAlertas alertas={alertasComContexto} />
+      <ListaAlertas alertas={alertasComContexto} podeResolver={podeResolver} />
     </div>
   );
 }

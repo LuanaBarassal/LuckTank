@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { limitarLogin, limitarRecuperacaoSenha, obterIp } from "@/lib/rate-limit";
+import { limitarLogin, limitarMfa, limitarRecuperacaoSenha, obterIp } from "@/lib/rate-limit";
 import { urlBaseAtual } from "@/lib/url-atual";
 import { validarSenha } from "./senha";
 
@@ -23,12 +23,21 @@ import { validarSenha } from "./senha";
 const MENSAGEM_CREDENCIAIS_INVALIDAS = "E-mail ou senha inválidos.";
 const MENSAGEM_RATE_LIMIT = "Muitas tentativas. Aguarde alguns minutos e tente novamente.";
 const MENSAGEM_LINK_INVALIDO = "Link inválido ou expirado.";
+const MENSAGEM_MFA_INVALIDO = "Código inválido ou expirado.";
 
 export interface ResultadoAcaoSessao {
   error?: string;
 }
 
-export async function login(email: string, senha: string): Promise<ResultadoAcaoSessao> {
+export interface ResultadoLogin extends ResultadoAcaoSessao {
+  // true quando e-mail/senha estavam corretos mas a conta tem MFA
+  // matriculado — a sessão já existe (AAL1), porém ainda não dá acesso às
+  // rotas protegidas (ver middleware.ts). O client mostra o passo de
+  // digitar o código do autenticador e chama `confirmarDesafioMfaLogin`.
+  mfaRequerido?: boolean;
+}
+
+export async function login(email: string, senha: string): Promise<ResultadoLogin> {
   const emailNormalizado = typeof email === "string" ? email.trim() : "";
   if (!emailNormalizado || typeof senha !== "string" || !senha) {
     return { error: MENSAGEM_CREDENCIAIS_INVALIDAS };
@@ -58,6 +67,50 @@ export async function login(email: string, senha: string): Promise<ResultadoAcao
   if (error) {
     return { error: MENSAGEM_CREDENCIAIS_INVALIDAS };
   }
+
+  // Achado de auditoria (MFA): signInWithPassword já cria uma sessão válida
+  // mesmo quando a conta tem um fator matriculado — só dá AAL1. Se o
+  // próximo nível possível é AAL2, a senha sozinha não é suficiente; o
+  // middleware barra o acesso às rotas protegidas até o desafio ser
+  // confirmado.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    return { mfaRequerido: true };
+  }
+
+  return {};
+}
+
+// Segundo passo do login quando a conta tem MFA — chamado a partir da tela
+// de login depois que `login()` devolveu `mfaRequerido: true`. Usa o único
+// fator TOTP verificado da conta (hoje só suportamos um fator por usuário);
+// se um dia precisar de múltiplos fatores, isto precisa de um seletor.
+export async function confirmarDesafioMfaLogin(codigo: string): Promise<ResultadoAcaoSessao> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Sessão expirada. Faça login novamente." };
+
+  const { permitido } = await limitarMfa(user.id);
+  if (!permitido) {
+    return { error: MENSAGEM_RATE_LIMIT };
+  }
+
+  if (!/^\d{6}$/.test(codigo.trim())) {
+    return { error: MENSAGEM_MFA_INVALIDO };
+  }
+
+  const { data: fatores } = await supabase.auth.mfa.listFactors();
+  const fator = fatores?.totp.find((f) => f.status === "verified");
+  if (!fator) return { error: "Nenhum fator de MFA encontrado nesta conta." };
+
+  const { error } = await supabase.auth.mfa.challengeAndVerify({
+    factorId: fator.id,
+    code: codigo.trim(),
+  });
+  if (error) return { error: MENSAGEM_MFA_INVALIDO };
 
   return {};
 }

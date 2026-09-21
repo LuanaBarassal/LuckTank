@@ -16,6 +16,12 @@ import { sincronizarFila } from "@/lib/offline/sync";
 export default function FilaPendencias() {
   const [itensComErro, setItensComErro] = useState<ItemFila[]>([]);
   const [sincronizando, setSincronizando] = useState(false);
+  // Achado de auditoria: descartar excluía o registro na hora, com um único
+  // toque, sem confirmação — sensível num produto anti-fraude, onde "o
+  // abastecimento nunca entrou no sistema" é exatamente o cenário a evitar.
+  // Confirmação inline (não `window.confirm` nativo) pra manter a mesma cara
+  // do resto do PWA.
+  const [confirmandoDescarte, setConfirmandoDescarte] = useState<string | null>(null);
 
   async function recarregar() {
     const fila = await listarFila();
@@ -35,8 +41,9 @@ export default function FilaPendencias() {
     setSincronizando(false);
   }
 
-  async function handleDescartar(registroUuid: string) {
+  async function handleConfirmarDescarte(registroUuid: string) {
     await removerDaFila(registroUuid);
+    setConfirmandoDescarte(null);
     await recarregar();
   }
 
@@ -60,13 +67,35 @@ export default function FilaPendencias() {
             <p className="mt-1 font-medium text-atencao-700">
               {item.erro ?? "Erro desconhecido."}
             </p>
-            <button
-              type="button"
-              onClick={() => handleDescartar(item.registroUuid)}
-              className="mt-2 text-xs font-semibold text-atencao-700 underline underline-offset-2"
-            >
-              Descartar este registro
-            </button>
+            {confirmandoDescarte === item.registroUuid ? (
+              <div className="mt-2 flex items-center gap-3">
+                <span className="text-xs font-semibold text-critico-700">
+                  Excluir para sempre este abastecimento não sincronizado?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleConfirmarDescarte(item.registroUuid)}
+                  className="text-xs font-semibold text-critico-700 underline underline-offset-2"
+                >
+                  Sim, descartar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmandoDescarte(null)}
+                  className="text-xs font-semibold text-atencao-700 underline underline-offset-2"
+                >
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmandoDescarte(item.registroUuid)}
+                className="mt-2 text-xs font-semibold text-atencao-700 underline underline-offset-2"
+              >
+                Descartar este registro
+              </button>
+            )}
           </li>
         ))}
       </ul>

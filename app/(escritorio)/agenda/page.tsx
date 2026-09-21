@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardTitle } from "@/components/ui/card";
 import FiltroVeiculoAgenda from "@/components/escritorio/filtro-veiculo-agenda";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
+import { buscarTodasLinhas } from "@/lib/supabase/paginar";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import { ROTULO_FORMA_PAGAMENTO, FORMAS_PAGAMENTO } from "@/lib/validacao/schemas";
 import { cn } from "@/lib/utils";
@@ -59,20 +60,26 @@ export default async function AgendaPage({
     opcoesMotorista.filter((o) => o.value.startsWith("id:")).map((o) => [o.value.slice(3), o.label])
   );
 
-  let query = supabase
-    .from("abastecimentos")
-    .select(
-      "id, data_abastecimento, hora, litros, valor_total, valor_litro, km_atual, km_rodado, consumo_kml, posto_nome, posto_cidade, posto_uf, forma_pagamento, numero_nota, bandeira_posto, veiculo_id, motorista_id, motorista_nome_livre"
-    )
-    .eq("status", "ativo")
-    .gte("data_abastecimento", de)
-    .lte("data_abastecimento", ate);
+  // Paginado (lib/supabase/paginar.ts) — mesmo achado de auditoria do
+  // dashboard/export: um mês raramente passa de 1000 abastecimentos, mas o
+  // teto default do PostgREST não deveria ser uma aposta silenciosa numa
+  // frota grande com muitos veículos.
+  const abastecimentosRaw = await buscarTodasLinhas((inicio, fim) => {
+    let query = supabase
+      .from("abastecimentos")
+      .select(
+        "id, data_abastecimento, hora, litros, valor_total, valor_litro, km_atual, km_rodado, consumo_kml, posto_nome, posto_cidade, posto_uf, forma_pagamento, numero_nota, bandeira_posto, veiculo_id, motorista_id, motorista_nome_livre"
+      )
+      .eq("status", "ativo")
+      .gte("data_abastecimento", de)
+      .lte("data_abastecimento", ate);
 
-  if (veiculoIdParam) query = query.eq("veiculo_id", veiculoIdParam);
+    if (veiculoIdParam) query = query.eq("veiculo_id", veiculoIdParam);
 
-  const { data: abastecimentosRaw } = await query.order("data_abastecimento", { ascending: true });
+    return query.order("data_abastecimento", { ascending: true }).range(inicio, fim);
+  });
 
-  const lista: AbastecimentoAgenda[] = (abastecimentosRaw ?? []).map((a) => ({
+  const lista: AbastecimentoAgenda[] = abastecimentosRaw.map((a) => ({
     id: a.id,
     data_abastecimento: a.data_abastecimento,
     hora: a.hora,

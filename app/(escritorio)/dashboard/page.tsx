@@ -11,6 +11,7 @@ import {
   aplicarFiltrosQuery,
 } from "@/lib/filtros/abastecimentos";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
+import { buscarTodasLinhas } from "@/lib/supabase/paginar";
 import {
   agregarGastoPorDia,
   agregarPrecoMedioPorDia,
@@ -41,18 +42,23 @@ export default async function DashboardPage({
 
   const { veiculos, opcoesMotorista } = await buscarOpcoesFiltro(supabase);
 
-  const { data: abastecimentos } = await aplicarFiltrosQuery(
-    supabase
-      .from("abastecimentos")
-      .select(
-        "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome"
-      )
-      .eq("status", "ativo"),
-    filtros,
-    periodo
-  ).order("data_abastecimento", { ascending: true });
-
-  const lista: AbastecimentoAgregavel[] = abastecimentos ?? [];
+  // Paginado (não um único `await` direto) — ver lib/supabase/paginar.ts:
+  // sem isso, o teto default do PostgREST (1000 linhas) truncaria o
+  // dashboard em silêncio pra uma empresa com histórico grande.
+  const lista: AbastecimentoAgregavel[] = await buscarTodasLinhas((inicio, fim) =>
+    aplicarFiltrosQuery(
+      supabase
+        .from("abastecimentos")
+        .select(
+          "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome"
+        )
+        .eq("status", "ativo"),
+      filtros,
+      periodo
+    )
+      .order("data_abastecimento", { ascending: true })
+      .range(inicio, fim)
+  );
 
   const mapaPlacas = new Map(veiculos.map((v) => [v.id, formatarVeiculo(v.prefixo, v.placa)]));
   const mapaMotoristas = new Map(

@@ -8,14 +8,36 @@ import { Redis } from "@upstash/redis";
 // pode cair numa instância diferente (ou uma nova, a frio), então um contador
 // local não sobrevive entre requisições — precisaria de estado compartilhado
 // de verdade. Se as env vars não estiverem configuradas (ex: dev local sem
-// conta Upstash), os limitadores ficam null e a função de checagem sempre
-// libera — sem rate limit, não sem servidor. Documentado no PROJETO.md como
-// limitação até configurar em produção.
+// conta Upstash), os limitadores ficam null.
 const redisConfigurado = Boolean(
   process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
 );
 
 const redis = redisConfigurado ? Redis.fromEnv() : null;
+
+// Achado de auditoria (2026-07-20): sem Upstash configurado, todo limitador
+// liberava geral, em silêncio — um deploy de produção mal configurado
+// desativava a proteção contra força bruta/enumeração/abuso de cota inteira,
+// sem nenhum sinal. Em dev (`NODE_ENV !== "production"`) mantém o
+// comportamento antigo (libera, pra não exigir conta Upstash pra rodar
+// localmente). Em produção sem Redis configurado, cada limitador agora
+// FALHA FECHADO — lança em vez de liberar. Isso não roda no build (`next
+// build` só compila as rotas, não executa `limitarX`), só quando a ação
+// (login, OCR, PIN, etc.) é chamada de verdade — então não quebra o CI, que
+// usa env vars placeholder. Antes de subir esta mudança pra produção,
+// confirme que UPSTASH_REDIS_REST_URL/TOKEN estão configuradas no ambiente
+// de produção da Vercel (Preview também roda com NODE_ENV=production, então
+// precisa das mesmas variáveis).
+const emProducao = process.env.NODE_ENV === "production";
+
+function exigirRedisConfigurado(nomeLimitador: string): void {
+  if (redisConfigurado || !emProducao) return;
+  throw new Error(
+    `Rate limit "${nomeLimitador}" desabilitado em produção: configure ` +
+      "UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN. Recusando operar " +
+      "sem essa proteção em vez de liberar geral em silêncio."
+  );
+}
 
 // OCR: cada submissão real usa no máximo MAXIMO_TENTATIVAS_OCR (2) chamadas.
 // 10/min por IP dá folga confortável pro uso legítimo e ainda barra abuso de
@@ -46,6 +68,17 @@ const limiteAbastecimento = redis
 // duas vezes de propósito.
 const limitePin = redis
   ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "5 m"), prefix: "lucktank:pin" })
+  : null;
+
+// Desafio de MFA (TOTP, 6 dígitos): mesmo raciocínio do PIN acima — chave é
+// o id do usuário autenticado (auth.uid()), nunca IP, porque quem está
+// tentando adivinhar o código já passou pela senha (AAL1); o ataque
+// relevante aqui é força bruta contra o segundo fator, não credential
+// stuffing. 5 tentativas / 5 min pelo mesmo motivo do PIN: apertado o
+// bastante pra inviabilizar força bruta num código de 6 dígitos, folgado o
+// bastante pra alguém digitando um código de verdade errado 1-2 vezes.
+const limiteMfa = redis
+  ? new Ratelimit({ redis, limiter: Ratelimit.slidingWindow(5, "5 m"), prefix: "lucktank:mfa" })
   : null;
 
 // Login (achado da auditoria 2026-07-16: antes rodava 100% no client,
@@ -106,20 +139,38 @@ export interface ResultadoLimite {
 }
 
 export async function limitarOcr(ip: string): Promise<ResultadoLimite> {
-  if (!limiteOcr) return { permitido: true };
+  if (!limiteOcr) {
+    exigirRedisConfigurado("ocr");
+    return { permitido: true };
+  }
   const { success } = await limiteOcr.limit(ip);
   return { permitido: success };
 }
 
 export async function limitarAbastecimento(ip: string): Promise<ResultadoLimite> {
-  if (!limiteAbastecimento) return { permitido: true };
+  if (!limiteAbastecimento) {
+    exigirRedisConfigurado("abastecimento");
+    return { permitido: true };
+  }
   const { success } = await limiteAbastecimento.limit(ip);
   return { permitido: success };
 }
 
 export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
-  if (!limitePin) return { permitido: true };
+  if (!limitePin) {
+    exigirRedisConfigurado("pin");
+    return { permitido: true };
+  }
   const { success } = await limitePin.limit(usuarioId);
+  return { permitido: success };
+}
+
+export async function limitarMfa(usuarioId: string): Promise<ResultadoLimite> {
+  if (!limiteMfa) {
+    exigirRedisConfigurado("mfa");
+    return { permitido: true };
+  }
+  const { success } = await limiteMfa.limit(usuarioId);
   return { permitido: success };
 }
 
@@ -129,7 +180,10 @@ export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
 // senão o tempo de resposta do login variaria conforme qual chave bateu o
 // limite primeiro, um side-channel bobo mas evitável de graça.
 export async function limitarLogin(ip: string, email: string): Promise<ResultadoLimite> {
-  if (!limiteLoginPorIp || !limiteLoginPorEmail) return { permitido: true };
+  if (!limiteLoginPorIp || !limiteLoginPorEmail) {
+    exigirRedisConfigurado("login");
+    return { permitido: true };
+  }
   const [porIp, porEmail] = await Promise.all([
     limiteLoginPorIp.limit(ip),
     limiteLoginPorEmail.limit(email.trim().toLowerCase()),
@@ -145,7 +199,10 @@ export async function limitarLogin(ip: string, email: string): Promise<Resultado
 // seria, ela mesma, um oráculo (via timing ou texto) de "esse e-mail existe
 // e já foi tentado antes").
 export async function limitarRecuperacaoSenha(ip: string, email: string): Promise<ResultadoLimite> {
-  if (!limiteRecuperacaoSenhaPorIp || !limiteRecuperacaoSenhaPorEmail) return { permitido: true };
+  if (!limiteRecuperacaoSenhaPorIp || !limiteRecuperacaoSenhaPorEmail) {
+    exigirRedisConfigurado("recuperacao-senha");
+    return { permitido: true };
+  }
   const [porIp, porEmail] = await Promise.all([
     limiteRecuperacaoSenhaPorIp.limit(ip),
     limiteRecuperacaoSenhaPorEmail.limit(email.trim().toLowerCase()),

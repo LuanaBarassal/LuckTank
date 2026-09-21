@@ -9,6 +9,7 @@ import {
   aplicarFiltrosQuery,
 } from "@/lib/filtros/abastecimentos";
 import { buscarOpcoesFiltro } from "@/lib/filtros/opcoes";
+import { buscarTodasLinhas } from "@/lib/supabase/paginar";
 import { formatarVeiculo } from "@/lib/formatacao";
 import { baixarFotoBruta } from "@/lib/midias";
 import { gerarZipFotos } from "@/lib/export/zip";
@@ -60,16 +61,19 @@ export async function GET(request: NextRequest) {
     opcoesMotorista.filter((o) => o.value.startsWith("id:")).map((o) => [o.value.slice(3), o.label])
   );
 
-  const { data: abastecimentos } = await aplicarFiltrosQuery(
-    supabase
-      .from("abastecimentos")
-      .select("id, data_abastecimento, veiculo_id, motorista_id, motorista_nome_livre")
-      .eq("status", "ativo"),
-    filtros,
-    periodo
+  // Paginado — ver lib/supabase/paginar.ts (mesmo achado de auditoria do
+  // dashboard/export Excel/PDF: sem isso, o teto default do PostgREST de
+  // 1000 linhas truncaria em silêncio o ZIP de um histórico grande).
+  const lista = await buscarTodasLinhas((inicio, fim) =>
+    aplicarFiltrosQuery(
+      supabase
+        .from("abastecimentos")
+        .select("id, data_abastecimento, veiculo_id, motorista_id, motorista_nome_livre")
+        .eq("status", "ativo"),
+      filtros,
+      periodo
+    ).range(inicio, fim)
   );
-
-  const lista = abastecimentos ?? [];
   const idsAbastecimentos = lista.map((a) => a.id);
 
   if (idsAbastecimentos.length === 0) {
@@ -80,19 +84,24 @@ export async function GET(request: NextRequest) {
   }
 
   // Sessão do usuário (RLS ativo) — a mesma garantia de isolamento por
-  // tenant que o resto do app já usa pra ler `midias`.
-  const { data: midiasBrutas } = await supabase
-    .from("midias")
-    .select("id, entidade_id, url, criado_em")
-    .eq("entidade_tipo", "abastecimento")
-    .eq("tipo", "foto_comprovante")
-    .in("entidade_id", idsAbastecimentos)
-    .order("criado_em", { ascending: false });
+  // tenant que o resto do app já usa pra ler `midias`. Também paginado: o
+  // `.in()` com muitos ids está sujeito ao mesmo teto de 1000 linhas.
+  const midiasBrutas = await buscarTodasLinhas<{ id: string; entidade_id: string; url: string; criado_em: string }>(
+    (inicio, fim) =>
+      supabase
+        .from("midias")
+        .select("id, entidade_id, url, criado_em")
+        .eq("entidade_tipo", "abastecimento")
+        .eq("tipo", "foto_comprovante")
+        .in("entidade_id", idsAbastecimentos)
+        .order("criado_em", { ascending: false })
+        .range(inicio, fim)
+  );
 
   // Uma foto por abastecimento na prática (mesmo critério do resto do app)
   // — se houver mais de uma linha, fica valendo a mais recente.
   const mapaMidia = new Map<string, { url: string }>();
-  for (const midia of midiasBrutas ?? []) {
+  for (const midia of midiasBrutas) {
     if (!mapaMidia.has(midia.entidade_id)) mapaMidia.set(midia.entidade_id, { url: midia.url });
   }
 

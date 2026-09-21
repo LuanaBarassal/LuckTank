@@ -4,18 +4,22 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Card, CardTitle } from "@/components/ui/card";
 import PinForm from "@/components/escritorio/pin-form";
 import EmailNotificacaoForm from "@/components/escritorio/email-notificacao-form";
+import MfaForm from "@/components/escritorio/mfa-form";
 import { temPinDefinido } from "./actions";
+import { listarFatoresMfa } from "@/lib/auth/mfa";
 
 export default async function ConfiguracoesPage() {
   const usuario = await getUsuarioAtual();
   if (!usuario) redirect("/login");
 
   const supabase = await createClient();
-  const [{ data: usuarios }, jaTemPin, { data: empresa }] = await Promise.all([
+  const [{ data: usuarios }, jaTemPin, { data: empresa }, fatoresMfa] = await Promise.all([
     supabase.from("usuarios").select("id, nome, email, papel").order("nome"),
     temPinDefinido(),
     supabase.from("empresas").select("email_notificacao").eq("id", usuario.empresa_id).single(),
+    listarFatoresMfa(),
   ]);
+  const fatorVerificado = fatoresMfa.find((f) => f.status === "verified") ?? null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -28,6 +32,16 @@ export default async function ConfiguracoesPage() {
           excluir um abastecimento. {jaTemPin ? "Você já tem um PIN configurado." : "Você ainda não configurou um PIN — essas ações ficarão bloqueadas até configurar."}
         </p>
         <PinForm jaTemPin={jaTemPin} />
+      </Card>
+
+      <Card variant="dark" className="max-w-md">
+        <CardTitle variant="dark">Verificação em duas etapas</CardTitle>
+        <p className="mb-4 text-sm text-slate-400">
+          Uma camada extra de proteção contra senha vazada ou reutilizada — pede um código do seu
+          celular a cada login, além da senha. Recomendado especialmente para administrador e para
+          quem acessa o painel de administração do sistema.
+        </p>
+        <MfaForm fatorVerificado={fatorVerificado} />
       </Card>
 
       <Card variant="dark" className="max-w-md">

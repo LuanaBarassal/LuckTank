@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { login } from "@/lib/auth/sessao-actions";
+import { confirmarDesafioMfaLogin, login } from "@/lib/auth/sessao-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { IconeOlho } from "@/components/ui/icone-olho";
@@ -15,6 +15,17 @@ export default function LoginForm() {
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  // Achado de auditoria: contas com MFA matriculado precisam de um segundo
+  // passo depois de e-mail/senha corretos — a sessão já existe (AAL1), mas
+  // o middleware só libera as rotas protegidas depois deste código.
+  const [pedindoCodigoMfa, setPedindoCodigoMfa] = useState(false);
+  const [codigoMfa, setCodigoMfa] = useState("");
+
+  function irParaDestino() {
+    const redirectTo = searchParams.get("redirectTo") || "/dashboard";
+    router.push(redirectTo);
+    router.refresh();
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -30,9 +41,29 @@ export default function LoginForm() {
       return;
     }
 
-    const redirectTo = searchParams.get("redirectTo") || "/dashboard";
-    router.push(redirectTo);
-    router.refresh();
+    if (resultado.mfaRequerido) {
+      setPedindoCodigoMfa(true);
+      return;
+    }
+
+    irParaDestino();
+  }
+
+  async function handleSubmitMfa(event: React.FormEvent) {
+    event.preventDefault();
+    setErro(null);
+    setCarregando(true);
+
+    const resultado = await confirmarDesafioMfaLogin(codigoMfa);
+
+    setCarregando(false);
+
+    if (resultado.error) {
+      setErro(resultado.error);
+      return;
+    }
+
+    irParaDestino();
   }
 
   return (
@@ -73,55 +104,105 @@ export default function LoginForm() {
             <span className="font-title text-xl font-bold text-navy-900">LuckTank</span>
           </div>
 
-          <h1 className="font-title text-2xl font-bold text-neutral-900">Acesso do escritório</h1>
-          <p className="mb-6 text-sm text-neutral-500">Entre com seu e-mail e senha.</p>
+          {pedindoCodigoMfa ? (
+            <>
+              <h1 className="font-title text-2xl font-bold text-neutral-900">
+                Verificação em duas etapas
+              </h1>
+              <p className="mb-6 text-sm text-neutral-500">
+                Digite o código de 6 dígitos do seu aplicativo autenticador.
+              </p>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Input
-              label="E-mail"
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <Input
-              label="Senha"
-              id="senha"
-              type={mostrarSenha ? "text" : "password"}
-              required
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
-              endAdornment={
+              <form onSubmit={handleSubmitMfa} className="flex flex-col gap-4">
+                <Input
+                  label="Código do autenticador"
+                  id="codigo-mfa"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  value={codigoMfa}
+                  onChange={(e) => setCodigoMfa(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+
+                {erro && (
+                  <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
+                    {erro}
+                  </p>
+                )}
+
+                <Button type="submit" fullWidth loading={carregando}>
+                  {carregando ? "Verificando..." : "Verificar"}
+                </Button>
+
                 <button
                   type="button"
-                  onClick={() => setMostrarSenha((atual) => !atual)}
-                  aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
-                  aria-pressed={mostrarSenha}
-                  className="flex h-11 w-11 items-center justify-center text-neutral-400 transition hover:text-neutral-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-500"
+                  onClick={() => {
+                    setPedindoCodigoMfa(false);
+                    setCodigoMfa("");
+                    setErro(null);
+                  }}
+                  className="self-center text-sm font-medium text-neutral-500 underline-offset-2 hover:underline"
                 >
-                  <IconeOlho aberto={mostrarSenha} />
+                  Voltar
                 </button>
-              }
-            />
+              </form>
+            </>
+          ) : (
+            <>
+              <h1 className="font-title text-2xl font-bold text-neutral-900">Acesso do escritório</h1>
+              <p className="mb-6 text-sm text-neutral-500">Entre com seu e-mail e senha.</p>
 
-            <a
-              href="/esqueci-senha"
-              className="-mt-2 self-end text-sm font-medium text-cyan-700 underline-offset-2 hover:underline"
-            >
-              Esqueci minha senha
-            </a>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                <Input
+                  label="E-mail"
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <Input
+                  label="Senha"
+                  id="senha"
+                  type={mostrarSenha ? "text" : "password"}
+                  required
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  endAdornment={
+                    <button
+                      type="button"
+                      onClick={() => setMostrarSenha((atual) => !atual)}
+                      aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                      aria-pressed={mostrarSenha}
+                      className="flex h-11 w-11 items-center justify-center text-neutral-400 transition hover:text-neutral-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-500"
+                    >
+                      <IconeOlho aberto={mostrarSenha} />
+                    </button>
+                  }
+                />
 
-            {erro && (
-              <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
-                {erro}
-              </p>
-            )}
+                <a
+                  href="/esqueci-senha"
+                  className="-mt-2 self-end text-sm font-medium text-cyan-700 underline-offset-2 hover:underline"
+                >
+                  Esqueci minha senha
+                </a>
 
-            <Button type="submit" fullWidth loading={carregando}>
-              {carregando ? "Entrando..." : "Entrar"}
-            </Button>
-          </form>
+                {erro && (
+                  <p className="rounded-lg bg-critico-50 px-3 py-2 text-sm font-medium text-critico-700">
+                    {erro}
+                  </p>
+                )}
+
+                <Button type="submit" fullWidth loading={carregando}>
+                  {carregando ? "Entrando..." : "Entrar"}
+                </Button>
+              </form>
+            </>
+          )}
 
           <p className="mt-6 text-center text-xs text-neutral-400">
             <a href="/privacidade" className="underline underline-offset-2 hover:text-neutral-600">

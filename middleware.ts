@@ -83,7 +83,23 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = resultadoAuth;
 
-  if (!ehRotaPublica(request.nextUrl.pathname) && !user) {
+  // Achado de auditoria (MFA): `signInWithPassword` já deixa uma sessão
+  // válida (AAL1) mesmo quando a conta tem um fator matriculado — sem esta
+  // checagem, quem tivesse a senha (roubada ou reaproveitada) entraria nas
+  // rotas protegidas sem nunca ser desafiado pelo segundo fator. Só barra
+  // quando o PRÓXIMO nível possível é AAL2 e o ATUAL ainda não chegou lá —
+  // contas sem MFA matriculado (`nextLevel` fica em "aal1") continuam
+  // passando normalmente, sem custo extra de latência perceptível
+  // (`getAuthenticatorAssuranceLevel` sem JWT só lê o token já em memória).
+  let precisaAutenticar = !user;
+  if (user && !ehRotaPublica(request.nextUrl.pathname)) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+      precisaAutenticar = true;
+    }
+  }
+
+  if (!ehRotaPublica(request.nextUrl.pathname) && precisaAutenticar) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirectTo", request.nextUrl.pathname);
     return NextResponse.redirect(loginUrl);

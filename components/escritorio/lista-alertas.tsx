@@ -38,7 +38,13 @@ export interface AlertaComContexto {
   abastecimentoData: string | null;
 }
 
-export default function ListaAlertas({ alertas }: { alertas: AlertaComContexto[] }) {
+export default function ListaAlertas({
+  alertas,
+  podeResolver,
+}: {
+  alertas: AlertaComContexto[];
+  podeResolver: boolean;
+}) {
   const pendentes = alertas.filter((a) => !a.resolvido);
   const resolvidos = alertas.filter((a) => a.resolvido);
 
@@ -58,7 +64,7 @@ export default function ListaAlertas({ alertas }: { alertas: AlertaComContexto[]
         ) : (
           <div className="flex flex-col gap-3">
             {pendentes.map((alerta) => (
-              <ItemAlerta key={alerta.id} alerta={alerta} />
+              <ItemAlerta key={alerta.id} alerta={alerta} podeResolver={podeResolver} />
             ))}
           </div>
         )}
@@ -71,7 +77,7 @@ export default function ListaAlertas({ alertas }: { alertas: AlertaComContexto[]
           </h2>
           <div className="flex flex-col gap-3 opacity-70">
             {resolvidos.map((alerta) => (
-              <ItemAlerta key={alerta.id} alerta={alerta} />
+              <ItemAlerta key={alerta.id} alerta={alerta} podeResolver={podeResolver} />
             ))}
           </div>
         </div>
@@ -80,7 +86,13 @@ export default function ListaAlertas({ alertas }: { alertas: AlertaComContexto[]
   );
 }
 
-function ItemAlerta({ alerta }: { alerta: AlertaComContexto }) {
+function ItemAlerta({
+  alerta,
+  podeResolver,
+}: {
+  alerta: AlertaComContexto;
+  podeResolver: boolean;
+}) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
 
@@ -120,7 +132,7 @@ function ItemAlerta({ alerta }: { alerta: AlertaComContexto }) {
             </p>
           )}
         </div>
-        {!alerta.resolvido && (
+        {!alerta.resolvido && podeResolver && (
           <Button variant="outline" onClick={handleResolver} loading={enviando}>
             Resolver
           </Button>
