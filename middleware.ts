@@ -22,6 +22,7 @@ const PUBLICAS = [
   "/api/ocr",
   "/api/gemini",
   "/api/abastecimentos",
+  "/api/cron",
 ];
 
 function ehRotaPublica(pathname: string) {
