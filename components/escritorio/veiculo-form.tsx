@@ -2,7 +2,7 @@
 
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { atualizarVeiculo, atualizarFotoVeiculo } from "@/app/(escritorio)/onibus/actions";
+import { criarVeiculo, atualizarVeiculo, atualizarFotoVeiculo } from "@/app/(escritorio)/onibus/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TIPOS_COMBUSTIVEL, ROTULO_TIPO_COMBUSTIVEL } from "@/lib/validacao/schemas";
@@ -21,28 +21,27 @@ interface VeiculoExistente {
 }
 
 interface VeiculoFormProps {
-  veiculo: VeiculoExistente;
+  veiculo?: VeiculoExistente;
 }
 
-// Só edição — cadastro de veículo novo saiu daqui (ver
-// components/escritorio/criar-veiculo-empresa-form.tsx, usado só pelo dono
-// do sistema em admin-sistema).
+// Sem `veiculo`: modo cadastro (usa criarVeiculo, restrito a administrador
+// — ver onibus/actions.ts). Com `veiculo`: modo edição, como antes.
 export default function VeiculoForm({ veiculo }: VeiculoFormProps) {
   const router = useRouter();
-  const [prefixo, setPrefixo] = useState(veiculo.prefixo ?? "");
-  const [placa, setPlaca] = useState(veiculo.placa);
-  const [modelo, setModelo] = useState(veiculo.modelo ?? "");
-  const [marca, setMarca] = useState(veiculo.marca ?? "");
-  const [ano, setAno] = useState(veiculo.ano?.toString() ?? "");
+  const [prefixo, setPrefixo] = useState(veiculo?.prefixo ?? "");
+  const [placa, setPlaca] = useState(veiculo?.placa ?? "");
+  const [modelo, setModelo] = useState(veiculo?.modelo ?? "");
+  const [marca, setMarca] = useState(veiculo?.marca ?? "");
+  const [ano, setAno] = useState(veiculo?.ano?.toString() ?? "");
   const [capacidade, setCapacidade] = useState(
-    veiculo.capacidade_tanque_litros?.toString() ?? ""
+    veiculo?.capacidade_tanque_litros?.toString() ?? ""
   );
   const [consumoReferencia, setConsumoReferencia] = useState(
-    veiculo.consumo_referencia_kml?.toString() ?? ""
+    veiculo?.consumo_referencia_kml?.toString() ?? ""
   );
-  const [tipoCombustivel, setTipoCombustivel] = useState(veiculo.tipo_combustivel ?? "");
+  const [tipoCombustivel, setTipoCombustivel] = useState(veiculo?.tipo_combustivel ?? "");
   const [fotoFile, setFotoFile] = useState<File | null>(null);
-  const [fotoUrlAtual] = useState(veiculo.foto_url ?? null);
+  const [fotoUrlAtual] = useState(veiculo?.foto_url ?? null);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -54,6 +53,55 @@ export default function VeiculoForm({ veiculo }: VeiculoFormProps) {
     event.preventDefault();
     setErro(null);
     setEnviando(true);
+
+    const payloadBase = {
+      placa,
+      prefixo: prefixo || null,
+      modelo,
+      marca,
+      ano: ano ? Number(ano) : null,
+      capacidade_tanque_litros: capacidade ? Number(capacidade) : null,
+      consumo_referencia_kml: consumoReferencia ? Number(consumoReferencia) : null,
+      tipo_combustivel: tipoCombustivel || null,
+    };
+
+    // Cadastro novo: a foto só pode subir DEPOIS do insert (atualizarFotoVeiculo
+    // exige um id de veículo já existente pra montar o caminho no Storage e
+    // pra RLS de fotos_veiculos_insert conferir a empresa). Cria sem foto
+    // primeiro, depois sobe a foto e grava a URL numa segunda chamada.
+    if (!veiculo) {
+      const resultadoCriar = await criarVeiculo({ ...payloadBase, foto_url: null });
+
+      if (resultadoCriar.error || !resultadoCriar.data) {
+        setErro(resultadoCriar.error ?? "Não foi possível cadastrar.");
+        setEnviando(false);
+        return;
+      }
+
+      const novoId = resultadoCriar.data.id;
+
+      if (fotoFile) {
+        const formDataFoto = new FormData();
+        formDataFoto.set("foto", fotoFile);
+        const resultadoFoto = await atualizarFotoVeiculo(novoId, formDataFoto);
+
+        if (resultadoFoto.error || !resultadoFoto.data) {
+          setErro(
+            `Veículo cadastrado, mas a foto não pôde ser enviada: ${resultadoFoto.error ?? "erro desconhecido"}. Edite o veículo pra tentar de novo.`
+          );
+          setEnviando(false);
+          router.refresh();
+          return;
+        }
+
+        await atualizarVeiculo(novoId, { ...payloadBase, foto_url: resultadoFoto.data.url });
+      }
+
+      setEnviando(false);
+      router.push("/onibus");
+      router.refresh();
+      return;
+    }
 
     let fotoUrl = fotoUrlAtual;
 
@@ -71,19 +119,7 @@ export default function VeiculoForm({ veiculo }: VeiculoFormProps) {
       fotoUrl = resultadoFoto.data.url;
     }
 
-    const payload = {
-      placa,
-      prefixo: prefixo || null,
-      modelo,
-      marca,
-      ano: ano ? Number(ano) : null,
-      capacidade_tanque_litros: capacidade ? Number(capacidade) : null,
-      consumo_referencia_kml: consumoReferencia ? Number(consumoReferencia) : null,
-      tipo_combustivel: tipoCombustivel || null,
-      foto_url: fotoUrl,
-    };
-
-    const resultado = await atualizarVeiculo(veiculo.id, payload);
+    const resultado = await atualizarVeiculo(veiculo.id, { ...payloadBase, foto_url: fotoUrl });
 
     setEnviando(false);
 
@@ -179,7 +215,7 @@ export default function VeiculoForm({ veiculo }: VeiculoFormProps) {
       {erro && <p className="text-sm font-medium text-critico-400">{erro}</p>}
 
       <Button type="submit" disabled={enviando}>
-        {enviando ? "Salvando..." : "Salvar alterações"}
+        {enviando ? "Salvando..." : veiculo ? "Salvar alterações" : "Cadastrar veículo"}
       </Button>
     </form>
   );

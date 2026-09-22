@@ -7,10 +7,60 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { registrarLog } from "@/lib/edicoes-log";
 import { verificarPinDoUsuario } from "@/lib/auth/pin";
-import { veiculoEdicaoSchema } from "@/lib/validacao/schemas";
+import { veiculoSchema, veiculoEdicaoSchema } from "@/lib/validacao/schemas";
 import { validarFoto, extensaoSeguraFoto } from "@/lib/validacao/arquivo";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
+
+// Reaberto por decisão explícita do usuário em 2026-09-22: entre 07/07 e
+// hoje, cadastro de veículo novo era exclusivo do dono do sistema (ver
+// criarVeiculoParaEmpresa em admin-sistema/actions.ts) justamente pra
+// impedir uma empresa cliente de cadastrar veículo de OUTRA empresa (que
+// não paga nada) na própria conta — "emprestar" o contrato pra terceiros.
+// Usuário confirmado ciente do risco e pediu a reversão mesmo assim (motivo:
+// ficou sem acesso à conta de dono do sistema, DONO_SISTEMA_EMAILS é um env
+// var "Secret" na Vercel que não pode ser lido de volta por ninguém). RLS
+// (veiculos_insert, 0001_init.sql) nunca foi removida — sempre exigiu
+// usuario_papel() = 'administrador', então a restrição aqui só espelha o
+// que o banco já aceita.
+export async function criarVeiculo(payload: unknown): Promise<Resultado<{ id: string }>> {
+  const usuario = await getUsuarioAtual();
+  if (!usuario) return { error: "Não autenticado." };
+  if (usuario.papel !== "administrador") {
+    return { error: "Só administradores podem cadastrar veículos." };
+  }
+
+  const parsed = veiculoSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("veiculos")
+    .insert({ ...parsed.data, empresa_id: usuario.empresa_id })
+    .select()
+    .single();
+
+  if (error) {
+    return {
+      error: error.code === "23505" ? "Já existe um veículo com essa placa." : "Não foi possível cadastrar.",
+    };
+  }
+
+  await registrarLog({
+    empresaId: usuario.empresa_id,
+    tabela: "veiculos",
+    registroId: data.id,
+    usuarioId: usuario.id,
+    acao: "insert",
+    antes: null,
+    depois: data,
+  });
+
+  revalidatePath("/onibus");
+  return { data: { id: data.id } };
+}
 
 // Upload da foto do veículo — antes rodava direto do Client Component
 // (components/escritorio/veiculo-form.tsx) usando o client do browser com
@@ -64,9 +114,6 @@ export async function atualizarFotoVeiculo(
   return { data: { url: publicUrlData.publicUrl } };
 }
 
-// Cadastro de veículo novo saiu daqui — só o LuckTank adiciona veículo a uma
-// empresa agora (ver criarVeiculoParaEmpresa em admin-sistema/actions.ts).
-// Edição de veículo já existente continua igual, sem mudança de permissão.
 export async function atualizarVeiculo(id: string, payload: unknown): Promise<Resultado<{ id: string }>> {
   const usuario = await getUsuarioAtual();
   if (!usuario) return { error: "Não autenticado." };
