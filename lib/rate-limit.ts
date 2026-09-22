@@ -39,6 +39,32 @@ function exigirRedisConfigurado(nomeLimitador: string): void {
   );
 }
 
+// Incidente real (2026-09-21): o banco Upstash configurado em produção parou
+// de resolver (DNS ENOTFOUND — provavelmente expirado/removido do lado do
+// Upstash), e `.limit()` nunca tinha try/catch — login, OCR, abastecimento,
+// recuperação de senha e exportação com PIN ficaram TODOS fora do ar (500),
+// não só sem rate limit. Mesmo princípio do fail-open em middleware.ts:
+// instabilidade de uma dependência EXTERNA nunca pode derrubar a
+// funcionalidade inteira. Diferente do caso "não configurado" acima (erro
+// de deploy, deveria nunca acontecer — esse continua fail-closed), aqui o
+// Redis está configurado e só falhou em tempo de execução; trata como
+// instabilidade transitória, libera e registra o erro pra investigação.
+async function comFallbackAberto(
+  chamada: () => Promise<{ success: boolean }>,
+  nomeLimitador: string
+): Promise<ResultadoLimite> {
+  try {
+    const { success } = await chamada();
+    return { permitido: success };
+  } catch (erro) {
+    console.error(
+      `[rate-limit] falha ao consultar Upstash em "${nomeLimitador}" - liberando (fail-open)`,
+      erro
+    );
+    return { permitido: true };
+  }
+}
+
 // OCR: cada submissão real usa no máximo MAXIMO_TENTATIVAS_OCR (2) chamadas.
 // 10/min por IP dá folga confortável pro uso legítimo e ainda barra abuso de
 // script (a cota do Gemini free tier é ~1.500 leituras/dia no total).
@@ -143,8 +169,7 @@ export async function limitarOcr(ip: string): Promise<ResultadoLimite> {
     exigirRedisConfigurado("ocr");
     return { permitido: true };
   }
-  const { success } = await limiteOcr.limit(ip);
-  return { permitido: success };
+  return comFallbackAberto(() => limiteOcr.limit(ip), "ocr");
 }
 
 export async function limitarAbastecimento(ip: string): Promise<ResultadoLimite> {
@@ -152,8 +177,7 @@ export async function limitarAbastecimento(ip: string): Promise<ResultadoLimite>
     exigirRedisConfigurado("abastecimento");
     return { permitido: true };
   }
-  const { success } = await limiteAbastecimento.limit(ip);
-  return { permitido: success };
+  return comFallbackAberto(() => limiteAbastecimento.limit(ip), "abastecimento");
 }
 
 export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
@@ -161,8 +185,7 @@ export async function limitarPin(usuarioId: string): Promise<ResultadoLimite> {
     exigirRedisConfigurado("pin");
     return { permitido: true };
   }
-  const { success } = await limitePin.limit(usuarioId);
-  return { permitido: success };
+  return comFallbackAberto(() => limitePin.limit(usuarioId), "pin");
 }
 
 export async function limitarMfa(usuarioId: string): Promise<ResultadoLimite> {
@@ -170,8 +193,7 @@ export async function limitarMfa(usuarioId: string): Promise<ResultadoLimite> {
     exigirRedisConfigurado("mfa");
     return { permitido: true };
   }
-  const { success } = await limiteMfa.limit(usuarioId);
-  return { permitido: success };
+  return comFallbackAberto(() => limiteMfa.limit(usuarioId), "mfa");
 }
 
 // Conta a tentativa (sucesso ou falha — o `.limit()` do Upstash sempre
@@ -184,11 +206,13 @@ export async function limitarLogin(ip: string, email: string): Promise<Resultado
     exigirRedisConfigurado("login");
     return { permitido: true };
   }
-  const [porIp, porEmail] = await Promise.all([
-    limiteLoginPorIp.limit(ip),
-    limiteLoginPorEmail.limit(email.trim().toLowerCase()),
-  ]);
-  return { permitido: porIp.success && porEmail.success };
+  return comFallbackAberto(async () => {
+    const [porIp, porEmail] = await Promise.all([
+      limiteLoginPorIp.limit(ip),
+      limiteLoginPorEmail.limit(email.trim().toLowerCase()),
+    ]);
+    return { success: porIp.success && porEmail.success };
+  }, "login");
 }
 
 // Mesmo padrão de duas chaves em paralelo do login — ver comentário ali.
@@ -203,9 +227,11 @@ export async function limitarRecuperacaoSenha(ip: string, email: string): Promis
     exigirRedisConfigurado("recuperacao-senha");
     return { permitido: true };
   }
-  const [porIp, porEmail] = await Promise.all([
-    limiteRecuperacaoSenhaPorIp.limit(ip),
-    limiteRecuperacaoSenhaPorEmail.limit(email.trim().toLowerCase()),
-  ]);
-  return { permitido: porIp.success && porEmail.success };
+  return comFallbackAberto(async () => {
+    const [porIp, porEmail] = await Promise.all([
+      limiteRecuperacaoSenhaPorIp.limit(ip),
+      limiteRecuperacaoSenhaPorEmail.limit(email.trim().toLowerCase()),
+    ]);
+    return { success: porIp.success && porEmail.success };
+  }, "recuperacao-senha");
 }
