@@ -44,9 +44,10 @@ export default function DadosNotaFiscal({
           <div className={`font-medium text-neutral-600 ${compacto ? "text-xs" : "text-sm"}`}>
             Emitir no CNPJ
           </div>
-          <div
-            className={`font-bold tabular-nums tracking-wide ${compacto ? "text-xl" : "text-2xl"}`}
-          >
+          {/* Nunca quebra: na etiqueta o bloco fica numa coluna de 70mm, e
+              "11.222.333/0001-" + "81" em duas linhas é ilegível pra ditar
+              no posto (achado imprimindo a etiqueta de verdade). */}
+          <div className="whitespace-nowrap text-xl font-bold tabular-nums">
             {formatarCnpj(dados.cnpj)}
           </div>
         </div>
@@ -59,8 +60,19 @@ export default function DadosNotaFiscal({
           {destinos.map((destino, indice) => (
             <div key={destino}>
               {indice > 0 && <div className="text-xs text-neutral-500">ou</div>}
-              <div className={`break-all font-bold ${compacto ? "text-base" : "text-lg"}`}>
-                {destino}
+              {/* E-mail longo quebra ANTES do "@" (<wbr>), nunca no meio da
+                  palavra — "expressomundialturismo" / "@gmail.com" na coluna
+                  estreita da etiqueta. `break-words` só como último recurso. */}
+              <div className={`break-words font-bold ${compacto ? "text-base" : "text-lg"}`}>
+                {destino.includes("@") ? (
+                  <>
+                    {destino.slice(0, destino.indexOf("@"))}
+                    <wbr />
+                    {destino.slice(destino.indexOf("@"))}
+                  </>
+                ) : (
+                  destino
+                )}
               </div>
             </div>
           ))}
