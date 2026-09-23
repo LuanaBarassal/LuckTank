@@ -3610,6 +3610,20 @@ saía com o cabeçalho/rodapé automático do navegador (data, título, URL,
     "Cabeçalhos e rodapés" em "Mais configurações" na janela de impressão.
 - **Texto da etiqueta num lugar só** (`lib/etiqueta/conteudo.ts`:
   `PASSOS_MOTORISTA` + `AVISO_OFFLINE`), usado pela página e pelo PDF.
+- ✅ **Achado imprimindo de verdade e corrigido** (`components/dados-nota-fiscal.tsx`):
+  na coluna de 70mm o CNPJ quebrava em "11.222.333/0001-" + "81" e o e-mail
+  longo quebraria no meio da palavra (`break-all`). CNPJ agora `nowrap`
+  (text-xl); e-mail quebra antes do "@" (`<wbr>`): "expressomundialturismo" /
+  "@gmail.com".
+- **Validado em produção** (empresa descartável, removida — zero restos):
+  rota do PDF 200 `application/pdf` attachment, 1 página, ~43KB, QR
+  decodificado = `/r/<qr_token>`; veículo de outra empresa → 404; sem login →
+  307 /login. Página de impressão impressa com o próprio Chrome (headless,
+  mesmas regras de `@page` da janela "Imprimir"), a partir do HTML real de
+  produção: **1 página** com a correção vs. **2 páginas** sem o `@page` (o
+  problema relatado), sem data/URL/numeração nas bordas. PDF de exemplo
+  gerado com um veículo real (2200 · FJZ0A31, Volare Fly 10 · 2024) e QR
+  conferido contra o `qr_token` dele.
 
 ## Regras invariantes (não podem quebrar)
 
