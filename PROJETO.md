@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 2: estado "nota pendente" + escritório anexa depois).
+Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 3: dados da NF por empresa na etiqueta do QR).
 
 ## Visão do produto
 
@@ -3432,6 +3432,52 @@ cobre o **Bloco 1**.
      `tem_nota_fiscal` e quebram sem a coluna.
   2. Ponta a ponta no navegador (Blocos 1 e 2) — depende das chaves do
      Supabase no `.env.local`.
+
+### Bloco 3 — Dados da NF por empresa na etiqueta do QR (2026-09-23)
+
+- ✅ **Migration `0020_empresas_dados_nota_fiscal.sql`** (escrita, **ainda não
+  aplicada**): `empresas.nota_fiscal_cnpj` / `nota_fiscal_whatsapp` /
+  `nota_fiscal_email`, **por empresa**, nada hardcoded no código. Três
+  colunas em vez de um "contato" texto livre porque o Bloco 4 precisa do
+  número (link wa.me) e do e-mail isolados. Gravados só com dígitos (CNPJ
+  14; WhatsApp = DDD + número, 10-11, sem o 55 — adicionado ao montar o
+  link), com CHECK de formato como defesa em profundidade (padrão da 0017).
+  **Seed do cliente piloto** na própria migration (CNPJ 18.785.716/0001-07,
+  (13) 97406-4858, expressomundialturismo@gmail.com) via `where nome ilike
+  'expresso mundial%'` + `coalesce` — não sobrescreve se já tiver sido
+  editado. Se o nome da empresa no banco não começar com "Expresso
+  Mundial", o seed não pega e é só preencher em Configurações.
+- ✅ **Configurações → card "Dados para a nota fiscal"**
+  (`DadosNotaFiscalForm` + `atualizarDadosNotaFiscal`): administrador da
+  própria empresa edita, os outros papéis só veem (mesmo padrão do e-mail
+  de notificação). Aceita digitado com máscara (`18.785.716/0001-07`,
+  `(13) 97406-4858`, `+55 ...`) e normaliza. CNPJ validado com **dígito
+  verificador** (`cnpjValido` em `lib/validacao/schemas.ts`, testado — o
+  CNPJ do piloto confere). **Diferente do e-mail de notificação, grava
+  `edicoes_log`** (`tabela = 'empresas'`): trocar o CNPJ em que a empresa
+  recebe nota sem rastro seria um jeito fácil de desviar nota.
+- ✅ **Etiqueta de impressão** (`onibus/[id]/etiqueta`): bloco "DADOS PARA A
+  NOTA FISCAL" logo abaixo do prefixo/placa — CNPJ grande (2xl, negrito,
+  `tabular-nums`) e "Enviar comprovante para" com WhatsApp **ou** e-mail,
+  borda preta, preto sobre branco (imprime em P&B, mesmo critério de
+  `InstrucoesMotorista`). Some se a empresa não tiver nenhum dado.
+  Componente único `components/dados-nota-fiscal.tsx`.
+- ✅ **Passo a passo impresso atualizado**: `InstrucoesMotorista` ganhou o
+  passo da NF (tinha ficado de fora no Bloco 1 — a etiqueta ainda dizia 3
+  fotos).
+- ✅ **Extra no fluxo do motorista**: a etapa da NF mostra o mesmo bloco
+  (versão compacta) enquanto não há foto — é o momento em que o motorista
+  está pedindo a nota ao frentista. `/r/[qrToken]` passa a ler os 3 campos
+  (service role, empresa resolvida pelo qr_token — invariante #2).
+- **Não feito**: edição desses campos em `/admin-sistema` (dono do sistema)
+  — hoje só pelo administrador da empresa em Configurações.
+- **`types/database.ts` editado à mão** de novo (3 campos em `empresas`,
+  formato do gerador) — regenerar após o `db push`.
+- **Validado**: `tsc`, `lint`, `test` (207/207, +10: CNPJ, schema,
+  formatação), `build` limpos. **Visual da etiqueta impressa não
+  conferido** (sem banco local — mesma pendência dos blocos anteriores).
+- **Pendência**: aplicar **0019 e 0020** antes de subir o código (a etiqueta,
+  Configurações e `/r/[qrToken]` selecionam as colunas novas).
 
 ## Regras invariantes (não podem quebrar)
 

@@ -5,7 +5,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { registrarLog } from "@/lib/edicoes-log";
 import { gerarHashPin, REGEX_PIN } from "@/lib/auth/pin";
-import { emailNotificacaoSchema } from "@/lib/validacao/schemas";
+import { emailNotificacaoSchema, dadosNotaFiscalSchema } from "@/lib/validacao/schemas";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
 
@@ -88,4 +88,57 @@ export async function temPinDefinido(): Promise<boolean> {
   const admin = createAdminClient();
   const { data } = await admin.from("usuarios").select("pin_hash").eq("id", usuario.id).single();
   return Boolean(data?.pin_hash);
+}
+
+// Dados pra pedir/enviar a nota fiscal (0020) — CNPJ em que o posto emite a
+// NF e o WhatsApp/e-mail pra onde vai o comprovante. Aparecem na etiqueta
+// impressa do QR, na etapa da NF do motorista e nos botões de envio. Mesmo
+// self-service do e-mail de notificação (administrador da PRÓPRIA empresa,
+// `empresa_id` sempre da sessão), mas COM edicoes_log: é o CNPJ em que a
+// empresa recebe nota fiscal — trocar isso sem rastro seria um jeito fácil
+// de desviar nota pra outro CNPJ.
+export async function atualizarDadosNotaFiscal(payload: unknown): Promise<Resultado<true>> {
+  const usuario = await getUsuarioAtual();
+  if (!usuario) return { error: "Não autenticado." };
+  if (usuario.papel !== "administrador") {
+    return { error: "Só administradores podem editar os dados da nota fiscal." };
+  }
+
+  const parsed = dadosNotaFiscalSchema.safeParse(payload);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
+  }
+
+  const admin = createAdminClient();
+  const { data: antes } = await admin
+    .from("empresas")
+    .select("nota_fiscal_cnpj, nota_fiscal_whatsapp, nota_fiscal_email")
+    .eq("id", usuario.empresa_id)
+    .single();
+
+  const { data: depois, error } = await admin
+    .from("empresas")
+    .update({
+      nota_fiscal_cnpj: parsed.data.cnpj,
+      nota_fiscal_whatsapp: parsed.data.whatsapp,
+      nota_fiscal_email: parsed.data.email,
+    })
+    .eq("id", usuario.empresa_id)
+    .select("nota_fiscal_cnpj, nota_fiscal_whatsapp, nota_fiscal_email")
+    .single();
+
+  if (error || !depois) return { error: "Não foi possível salvar os dados da nota fiscal." };
+
+  await registrarLog({
+    empresaId: usuario.empresa_id,
+    tabela: "empresas",
+    registroId: usuario.empresa_id,
+    usuarioId: usuario.id,
+    acao: "update",
+    antes,
+    depois,
+  });
+
+  revalidatePath("/configuracoes");
+  return { data: true };
 }

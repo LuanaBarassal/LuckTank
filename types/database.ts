@@ -287,6 +287,9 @@ export type Database = {
           email_notificacao: string | null
           id: string
           nome: string
+          nota_fiscal_cnpj: string | null
+          nota_fiscal_email: string | null
+          nota_fiscal_whatsapp: string | null
           proxima_renovacao: string | null
         }
         Insert: {
@@ -294,6 +297,9 @@ export type Database = {
           email_notificacao?: string | null
           id?: string
           nome: string
+          nota_fiscal_cnpj?: string | null
+          nota_fiscal_email?: string | null
+          nota_fiscal_whatsapp?: string | null
           proxima_renovacao?: string | null
         }
         Update: {
@@ -301,6 +307,9 @@ export type Database = {
           email_notificacao?: string | null
           id?: string
           nome?: string
+          nota_fiscal_cnpj?: string | null
+          nota_fiscal_email?: string | null
+          nota_fiscal_whatsapp?: string | null
           proxima_renovacao?: string | null
         }
         Relationships: []

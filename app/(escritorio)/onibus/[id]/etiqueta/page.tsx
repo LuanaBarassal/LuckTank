@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import BotaoImprimir from "@/components/escritorio/botao-imprimir";
 import InstrucoesMotorista from "@/components/escritorio/instrucoes-motorista";
+import DadosNotaFiscal, { temDadosNotaFiscal } from "@/components/dados-nota-fiscal";
 import { formatarVeiculo } from "@/lib/formatacao";
 
 export default async function EtiquetaVeiculoPage({ params }: { params: { id: string } }) {
@@ -17,6 +18,21 @@ export default async function EtiquetaVeiculoPage({ params }: { params: { id: st
     .single();
 
   if (!veiculo) notFound();
+
+  // Dados da NF são da empresa (0020), não do veículo — mesma leitura via
+  // sessão/RLS (empresas_select, 0010) de qualquer outra tela do escritório.
+  const { data: empresa } = await supabase
+    .from("empresas")
+    .select("nota_fiscal_cnpj, nota_fiscal_whatsapp, nota_fiscal_email")
+    .eq("id", usuario.empresa_id)
+    .single();
+  const dadosNotaFiscal = empresa
+    ? {
+        cnpj: empresa.nota_fiscal_cnpj,
+        whatsapp: empresa.nota_fiscal_whatsapp,
+        email: empresa.nota_fiscal_email,
+      }
+    : null;
 
   return (
     <div className="flex flex-col items-center gap-6 py-8">
@@ -37,6 +53,7 @@ export default async function EtiquetaVeiculoPage({ params }: { params: { id: st
             </div>
           )}
         </div>
+        {temDadosNotaFiscal(dadosNotaFiscal) && <DadosNotaFiscal dados={dadosNotaFiscal} />}
       </div>
     </div>
   );

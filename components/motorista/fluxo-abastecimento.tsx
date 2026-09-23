@@ -16,6 +16,10 @@ import { adicionarNaFila } from "@/lib/offline/db";
 import { comprimirImagem } from "@/lib/offline/comprimir-imagem";
 import { sincronizarFila } from "@/lib/offline/sync";
 import { formatarVeiculo } from "@/lib/formatacao";
+import DadosNotaFiscal, {
+  temDadosNotaFiscal,
+  type DadosNotaFiscalEmpresa,
+} from "@/components/dados-nota-fiscal";
 
 interface Motorista {
   id: string;
@@ -41,6 +45,7 @@ interface Props {
   };
   motoristas: Motorista[];
   ultimoAbastecimento: UltimoAbastecimento | null;
+  dadosNotaFiscal: DadosNotaFiscalEmpresa | null;
 }
 
 type Passo =
@@ -111,6 +116,7 @@ export default function FluxoAbastecimento({
   veiculo,
   motoristas,
   ultimoAbastecimento,
+  dadosNotaFiscal,
 }: Props) {
   const estaOnline = useOnlineStatus();
   const [passo, setPasso] = useState<Passo>("nome");
@@ -693,7 +699,14 @@ export default function FluxoAbastecimento({
               onVoltar={() => setPasso("foto-hodometro")}
               onContinuar={() => setPasso("formulario")}
               onPular={handlePularFotoNotaFiscal}
-            />
+            >
+              {/* Mesmo bloco da etiqueta impressa — o motorista mostra a tela
+                  pro frentista na hora de pedir a nota. Some depois da foto
+                  pra não empurrar a pré-visualização pra baixo. */}
+              {!fotoNotaFiscalPreview && temDadosNotaFiscal(dadosNotaFiscal) && (
+                <DadosNotaFiscal dados={dadosNotaFiscal} compacto />
+              )}
+            </PassoFoto>
           )}
 
           {passo === "formulario" && (

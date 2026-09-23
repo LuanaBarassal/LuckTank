@@ -166,3 +166,46 @@ export const abastecimentoSchema = z
     message: "Selecione ou informe o nome do motorista",
     path: ["motorista_nome_livre"],
   });
+
+// CNPJ com dígito verificador (algoritmo oficial da Receita, pesos 5..2/9..2
+// e 6..2/9..2). Recusa sequência repetida ("00000000000000" passa no cálculo
+// mas não é CNPJ real). Recebe só dígitos.
+export function cnpjValido(digitos: string): boolean {
+  if (!/^\d{14}$/.test(digitos) || /^(\d)\1{13}$/.test(digitos)) return false;
+  const calcularDigito = (base: string) => {
+    const pesos =
+      base.length === 12
+        ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const soma = base.split("").reduce((total, d, i) => total + Number(d) * pesos[i], 0);
+    const resto = soma % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const primeiro = calcularDigito(digitos.slice(0, 12));
+  const segundo = calcularDigito(digitos.slice(0, 12) + primeiro);
+  return digitos.endsWith(`${primeiro}${segundo}`);
+}
+
+// Dados pra pedir/enviar a nota fiscal (0020). Aceita o texto como a pessoa
+// digita ("18.785.716/0001-07", "(13) 97406-4858") e normaliza pra só
+// dígitos — é assim que fica gravado. Campo vazio = null (limpa o campo).
+const opcionalNormalizado = z
+  .string()
+  .trim()
+  .nullable()
+  .transform((v) => (v ? v : null));
+
+export const dadosNotaFiscalSchema = z.object({
+  cnpj: opcionalNormalizado
+    .transform((v) => (v ? v.replace(/\D/g, "") : null))
+    .refine((v) => v === null || cnpjValido(v), "CNPJ inválido"),
+  whatsapp: opcionalNormalizado
+    .transform((v) => (v ? v.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "") : null))
+    .refine((v) => v === null || /^\d{10,11}$/.test(v), "WhatsApp inválido — use DDD + número"),
+  email: opcionalNormalizado.refine(
+    (v) => v === null || z.string().email().safeParse(v).success,
+    "E-mail inválido"
+  ),
+});
+
+export type DadosNotaFiscal = z.infer<typeof dadosNotaFiscalSchema>;

@@ -2,8 +2,8 @@
 // partir do fluxo real do motorista (components/motorista/fluxo-abastecimento.tsx
 // e os passos PassoNome/PassoFoto/PassoFormulario), não inventado: são
 // exatamente as telas que o motorista vê, na ordem em que aparecem — captura
-// guiada de 3 fotos (visor da bomba → cupom → hodômetro), bomba e hodômetro
-// podem ser puladas se não der pra fotografar.
+// guiada de 4 fotos (visor da bomba → cupom → hodômetro → nota fiscal),
+// bomba/hodômetro/nota podem ser puladas.
 // Preto sobre branco de propósito (alto contraste em impressora comum, P&B
 // inclusive) — não usa nenhuma cor semântica que dependa de tinta colorida.
 const PASSOS = [
@@ -12,6 +12,7 @@ const PASSOS = [
   "Fotografe o visor da bomba mostrando litros e valor (ou pule, se não der pra fotografar).",
   "Tire uma foto legível do comprovante/cupom do abastecimento, ou escolha uma da galeria.",
   "Fotografe o painel/hodômetro mostrando o KM atual (ou pule, se não der pra fotografar).",
+  "Fotografe a nota fiscal eletrônica pedida no CNPJ da empresa (ou pule, se o posto não entregou agora).",
   "Confira os dados preenchidos automaticamente (ou preencha à mão) e confirme o KM atual do veículo.",
   'Toque em "Confirmar abastecimento". Pronto — o registro já chega ao escritório.',
 ];

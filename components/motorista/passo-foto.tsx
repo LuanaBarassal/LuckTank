@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ChangeEvent } from "react";
+import { useRef, type ChangeEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -21,6 +21,9 @@ interface Props {
   onVoltar: () => void;
   onContinuar: () => void;
   onPular?: () => void;
+  // Conteúdo extra logo abaixo da instrução (ex.: dados da empresa pra pedir
+  // a nota fiscal no posto, na etapa da NF).
+  children?: ReactNode;
 }
 
 export default function PassoFoto({
@@ -37,6 +40,7 @@ export default function PassoFoto({
   onVoltar,
   onContinuar,
   onPular,
+  children,
 }: Props) {
   const inputCameraRef = useRef<HTMLInputElement>(null);
   const inputGaleriaRef = useRef<HTMLInputElement>(null);
@@ -62,6 +66,8 @@ export default function PassoFoto({
         <h2 className="text-lg font-semibold text-neutral-900">{titulo}</h2>
       </div>
       <p className="text-sm text-neutral-500">{instrucao}</p>
+
+      {children}
 
       {mensagemInfo && (
         <p className="rounded-lg bg-sucesso-50 px-3 py-2 text-sm font-medium text-sucesso-700">

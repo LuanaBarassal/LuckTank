@@ -29,7 +29,7 @@ export default async function AberturaVeiculoPage({
 
   const { data: empresa } = await admin
     .from("empresas")
-    .select("nome")
+    .select("nome, nota_fiscal_cnpj, nota_fiscal_whatsapp, nota_fiscal_email")
     .eq("id", veiculo.empresa_id)
     .single();
 
@@ -63,6 +63,15 @@ export default async function AberturaVeiculoPage({
       }}
       motoristas={motoristas ?? []}
       ultimoAbastecimento={ultimoAbastecimento ?? null}
+      dadosNotaFiscal={
+        empresa
+          ? {
+              cnpj: empresa.nota_fiscal_cnpj,
+              whatsapp: empresa.nota_fiscal_whatsapp,
+              email: empresa.nota_fiscal_email,
+            }
+          : null
+      }
     />
   );
 }
