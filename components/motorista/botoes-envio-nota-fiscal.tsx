@@ -46,7 +46,12 @@ export default function BotoesEnvioNotaFiscal({ destino, mensagem, foto }: Props
 
   async function compartilharFoto() {
     try {
-      await navigator.share({ files: [foto], title: assunto, text: texto });
+      // Aqui a foto VAI junto (é o único caminho que anexa de verdade).
+      await navigator.share({
+        files: [foto],
+        title: assunto,
+        text: montarMensagemNotaFiscal(mensagem, true),
+      });
     } catch {
       // Cancelado pela pessoa ou não suportado — nada a fazer.
     }

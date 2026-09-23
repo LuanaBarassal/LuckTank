@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { formatarDataBr, formatarMoeda } from "@/lib/formatacao";
 import type { EstatisticasVeiculo } from "@/lib/onibus/estatisticas";
 import type { CabecalhoExport, RegistroExport, ResumoExport } from "./tipos";
+import { ROTULO_ESTADO_NOTA_FISCAL } from "@/lib/nota-fiscal/estado";
 
 // Paleta navy/ciano — mesma usada no LuckFrota (produto irmão, ver
 // tailwind.config.ts e PROJETO.md) pra manter os exports "família" com o
@@ -34,6 +35,7 @@ const COLUNAS = [
   { key: "posto", width: 26 },
   { key: "cidade", width: 18 },
   { key: "nota", width: 14 },
+  { key: "notaFiscal", width: 20 },
   { key: "alertas", width: 44 },
   { key: "fotoCupom", width: 12 },
   { key: "fotoBomba", width: 12 },
@@ -53,6 +55,7 @@ const TITULOS_TABELA = [
   "Posto",
   "Cidade",
   "Nº nota",
+  "Nota Fiscal",
   "Alertas",
   "Foto Cupom",
   "Foto Bomba",
@@ -166,6 +169,7 @@ export async function gerarExcel(
       posto: r.postoNome ?? "",
       cidade: r.postoCidade ?? "",
       nota: r.numeroNota ?? "",
+      notaFiscal: ROTULO_ESTADO_NOTA_FISCAL[r.notaFiscalEstado],
       alertas: r.alertas.join(", "),
       fotoCupom: r.fotoCupomUrl ? "Ver foto" : "—",
       fotoBomba: r.fotoBombaUrl ? "Ver foto" : "—",
@@ -193,6 +197,17 @@ export async function gerarExcel(
       const cell = row.getCell(chave);
       cell.value = { text: "Ver foto", hyperlink: url };
       cell.font = { color: { argb: CYAN_ESCURO }, underline: true };
+    }
+
+    // Nota fiscal: o estado é sempre escrito (uso contábil — "Pendente" e
+    // "Anterior ao recurso" também são informação); quando anexada, o
+    // "Tem nota" vira link pro arquivo (foto ou PDF), igual às fotos.
+    if (r.notaFiscalUrl) {
+      const cell = row.getCell("notaFiscal");
+      cell.value = { text: ROTULO_ESTADO_NOTA_FISCAL[r.notaFiscalEstado], hyperlink: r.notaFiscalUrl };
+      cell.font = { color: { argb: CYAN_ESCURO }, underline: true };
+    } else if (r.notaFiscalEstado === "pendente") {
+      row.getCell("notaFiscal").font = { bold: true, color: { argb: "FFB45309" } };
     }
 
     if (indice % 2 === 1) {

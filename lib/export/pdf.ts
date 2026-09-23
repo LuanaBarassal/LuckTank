@@ -4,6 +4,7 @@ import autoTable from "jspdf-autotable";
 import { formatarDataBr, formatarMoeda } from "@/lib/formatacao";
 import type { EstatisticasVeiculo } from "@/lib/onibus/estatisticas";
 import type { CabecalhoExport, RegistroExport, ResumoExport } from "./tipos";
+import { ROTULO_ESTADO_NOTA_FISCAL } from "@/lib/nota-fiscal/estado";
 import type { FotoBaixada } from "@/lib/midias";
 
 // Mesma paleta navy/ciano do Excel (ver lib/export/excel.ts) e do resto do
@@ -105,7 +106,8 @@ export function gerarPdf(
     "Total",
     "Consumo",
     "Posto",
-    "Nota",
+    "Nº nota",
+    "Nota Fiscal",
     "Alertas",
   ];
 
@@ -122,6 +124,7 @@ export function gerarPdf(
     r.consumoKml != null ? r.consumoKml.toFixed(2) : "—",
     r.postoNome ?? "—",
     r.numeroNota ?? "—",
+    ROTULO_ESTADO_NOTA_FISCAL[r.notaFiscalEstado],
     r.alertas.join(", ") || "—",
   ]);
 
@@ -140,7 +143,8 @@ export function gerarPdf(
     columnStyles: {
       0: { cellWidth: 20 }, // Fotos (cupom + bomba + hodômetro lado a lado)
       10: { cellWidth: 30 }, // Posto
-      12: { cellWidth: 40 }, // Alertas
+      12: { cellWidth: 18 }, // Nota Fiscal (estado)
+      13: { cellWidth: 40 }, // Alertas
     },
     didDrawCell: (dados) => {
       if (dados.section !== "body" || dados.column.index !== 0) return;

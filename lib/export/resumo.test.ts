@@ -20,6 +20,8 @@ function registro(parcial: Partial<RegistroExport>): RegistroExport {
     fotoCupomUrl: null,
     fotoBombaUrl: null,
     fotoHodometroUrl: null,
+    notaFiscalEstado: "anterior",
+    notaFiscalUrl: null,
     ...parcial,
   };
 }

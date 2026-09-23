@@ -15,7 +15,13 @@ export function gerarNomeFotoZip(
   veiculoLabel: string,
   motoristaLabel: string,
   extensao: string,
-  nomesJaUsados: Map<string, number>
+  nomesJaUsados: Map<string, number>,
+  // Qual foto do abastecimento ("cupom", "bomba", "hodometro",
+  // "nota-fiscal") — desde que o zip leva as 4, sem isso as fotos de um
+  // mesmo abastecimento só se diferenciariam pelo sufixo de deduplicação.
+  // Valor de uma lista fixa do próprio código (nunca input do usuário), por
+  // isso entra sem normalizar (preserva o "-" de "nota-fiscal").
+  tipo?: string
 ): string {
   // Cada parte é normalizada separadamente e só depois junta com "_" — igual
   // a gerarNomeArquivoExport (nome-arquivo.ts). Normalizar a string inteira
@@ -25,8 +31,9 @@ export function gerarNomeFotoZip(
   const base =
     [dataAbastecimento, veiculoLabel, motoristaLabel].map(normalizarSlug).filter(Boolean).join("_") ||
     "comprovante";
-  const chaveBase = `${base}.${extensao}`;
+  const baseComTipo = tipo ? `${base}_${tipo}` : base;
+  const chaveBase = `${baseComTipo}.${extensao}`;
   const contagem = nomesJaUsados.get(chaveBase) ?? 0;
   nomesJaUsados.set(chaveBase, contagem + 1);
-  return contagem === 0 ? chaveBase : `${base}-${contagem + 1}.${extensao}`;
+  return contagem === 0 ? chaveBase : `${baseComTipo}-${contagem + 1}.${extensao}`;
 }

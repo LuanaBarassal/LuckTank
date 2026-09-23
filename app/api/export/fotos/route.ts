@@ -16,7 +16,8 @@ import { gerarZipFotos } from "@/lib/export/zip";
 import { gerarNomeArquivoExport } from "@/lib/export/nome-arquivo";
 import { gerarNomeFotoZip } from "@/lib/export/nome-foto-zip";
 
-// Baixa todos os comprovantes do período/filtro ativo como um .zip único —
+// Baixa todas as fotos (cupom, bomba, hodômetro) e a nota fiscal do
+// período/filtro ativo como um .zip único —
 // alternativa mais simples a integrar com um Drive externo de verdade
 // (OAuth por empresa, token guardado com segurança, fila de sincronização
 // em background que a Vercel não tem): aqui é só reunir arquivos que já
@@ -29,6 +30,15 @@ import { gerarNomeFotoZip } from "@/lib/export/nome-foto-zip";
 // concorrência isso arriscaria estourar memória/timeout da function
 // serverless bem antes de qualquer teto de linhas do banco.
 const TAMANHO_LOTE_DOWNLOAD = 6;
+
+// Tipo em `midias` → sufixo no nome do arquivo dentro do zip. A ordem aqui
+// é a ordem dentro de cada abastecimento no zip.
+const SUFIXO_POR_TIPO: Record<string, string> = {
+  foto_comprovante: "cupom",
+  foto_bomba: "bomba",
+  foto_hodometro: "hodometro",
+  nota_fiscal: "nota-fiscal",
+};
 
 export async function GET(request: NextRequest) {
   const usuario = await getUsuarioAtual();
@@ -86,30 +96,45 @@ export async function GET(request: NextRequest) {
   // Sessão do usuário (RLS ativo) — a mesma garantia de isolamento por
   // tenant que o resto do app já usa pra ler `midias`. Também paginado: o
   // `.in()` com muitos ids está sujeito ao mesmo teto de 1000 linhas.
-  const midiasBrutas = await buscarTodasLinhas<{ id: string; entidade_id: string; url: string; criado_em: string }>(
-    (inicio, fim) =>
-      supabase
-        .from("midias")
-        .select("id, entidade_id, url, criado_em")
-        .eq("entidade_tipo", "abastecimento")
-        .eq("tipo", "foto_comprovante")
-        .in("entidade_id", idsAbastecimentos)
-        .order("criado_em", { ascending: false })
-        .range(inicio, fim)
+  // As 4 mídias do abastecimento (cupom, bomba, hodômetro e nota fiscal) —
+  // antes só o cupom entrava; a NF precisa sair junto (uso contábil).
+  const midiasBrutas = await buscarTodasLinhas<{
+    id: string;
+    entidade_id: string;
+    tipo: string;
+    url: string;
+    criado_em: string;
+  }>((inicio, fim) =>
+    supabase
+      .from("midias")
+      .select("id, entidade_id, tipo, url, criado_em")
+      .eq("entidade_tipo", "abastecimento")
+      .in("tipo", Object.keys(SUFIXO_POR_TIPO))
+      .in("entidade_id", idsAbastecimentos)
+      .order("criado_em", { ascending: false })
+      .range(inicio, fim)
   );
 
-  // Uma foto por abastecimento na prática (mesmo critério do resto do app)
-  // — se houver mais de uma linha, fica valendo a mais recente.
-  const mapaMidia = new Map<string, { url: string }>();
+  // Uma mídia por TIPO por abastecimento (mesmo critério do resto do app) —
+  // se houver mais de uma do mesmo tipo, fica valendo a mais recente.
+  const mapaMidia = new Map<string, Map<string, string>>();
   for (const midia of midiasBrutas) {
-    if (!mapaMidia.has(midia.entidade_id)) mapaMidia.set(midia.entidade_id, { url: midia.url });
+    const porTipo = mapaMidia.get(midia.entidade_id) ?? new Map<string, string>();
+    if (!porTipo.has(midia.tipo)) porTipo.set(midia.tipo, midia.url);
+    mapaMidia.set(midia.entidade_id, porTipo);
   }
 
-  const itensComFoto = lista.filter((a) => mapaMidia.has(a.id));
+  // Ordem estável: abastecimento a abastecimento, e dentro de cada um
+  // cupom → bomba → hodômetro → nota fiscal (a ordem de SUFIXO_POR_TIPO).
+  const itens = lista.flatMap((a) =>
+    Object.keys(SUFIXO_POR_TIPO)
+      .filter((tipo) => mapaMidia.get(a.id)?.has(tipo))
+      .map((tipo) => ({ abastecimento: a, tipo, url: mapaMidia.get(a.id)!.get(tipo)! }))
+  );
 
-  if (itensComFoto.length === 0) {
+  if (itens.length === 0) {
     return NextResponse.json(
-      { error: "Nenhum abastecimento do período/filtro selecionado tem foto de comprovante." },
+      { error: "Nenhum abastecimento do período/filtro selecionado tem foto." },
       { status: 404 }
     );
   }
@@ -121,36 +146,31 @@ export async function GET(request: NextRequest) {
   const nomesJaUsados = new Map<string, number>();
   const arquivos: { nome: string; buffer: Buffer }[] = [];
 
-  for (let inicio = 0; inicio < itensComFoto.length; inicio += TAMANHO_LOTE_DOWNLOAD) {
-    const lote = itensComFoto.slice(inicio, inicio + TAMANHO_LOTE_DOWNLOAD);
+  for (let inicio = 0; inicio < itens.length; inicio += TAMANHO_LOTE_DOWNLOAD) {
+    const lote = itens.slice(inicio, inicio + TAMANHO_LOTE_DOWNLOAD);
     const baixados = await Promise.all(
-      lote.map(async (a) => {
-        const midia = mapaMidia.get(a.id);
-        if (!midia) return null;
-
-        const foto = await baixarFotoBruta(admin, midia.url);
-        if (!foto) return null;
-
-        const motorista =
-          a.motorista_nome_livre ??
-          (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ??
-          "sem motorista";
-
-        const nome = gerarNomeFotoZip(
-          a.data_abastecimento,
-          mapaPlacas.get(a.veiculo_id) ?? "veiculo",
-          motorista,
-          foto.extensao,
-          nomesJaUsados
-        );
-
-        return { nome, buffer: foto.buffer };
-      })
+      lote.map(async ({ url }) => baixarFotoBruta(admin, url))
     );
 
-    for (const item of baixados) {
-      if (item) arquivos.push(item);
-    }
+    // Nomes gerados em sequência (fora do Promise.all) — a deduplicação
+    // depende da ordem, e o download em paralelo não pode embaralhá-la.
+    baixados.forEach((foto, indice) => {
+      if (!foto) return;
+      const { abastecimento: a, tipo } = lote[indice];
+      const motorista =
+        a.motorista_nome_livre ??
+        (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ??
+        "sem motorista";
+      const nome = gerarNomeFotoZip(
+        a.data_abastecimento,
+        mapaPlacas.get(a.veiculo_id) ?? "veiculo",
+        motorista,
+        foto.extensao,
+        nomesJaUsados,
+        SUFIXO_POR_TIPO[tipo]
+      );
+      arquivos.push({ nome, buffer: foto.buffer });
+    });
   }
 
   if (arquivos.length === 0) {

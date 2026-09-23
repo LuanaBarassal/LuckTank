@@ -19,7 +19,11 @@ export function montarAssuntoNotaFiscal(dados: DadosMensagemNotaFiscal): string 
   return `Nota fiscal - abastecimento ${dados.veiculo} - ${formatarDataBr(dados.dataAbastecimento)}`;
 }
 
-export function montarMensagemNotaFiscal(dados: DadosMensagemNotaFiscal): string {
+// `fotoAnexada`: só é verdade no "Compartilhar foto da nota" (Web Share com
+// o arquivo). Em wa.me e mailto: nada é anexado — a mensagem INSTRUI a
+// anexar, nunca afirma que a foto já foi (se a pessoa não anexar, o texto
+// não pode mentir pra quem recebe).
+export function montarMensagemNotaFiscal(dados: DadosMensagemNotaFiscal, fotoAnexada = false): string {
   const linhas = [
     "Nota fiscal do abastecimento",
     `Veículo: ${dados.veiculo}`,
@@ -28,7 +32,7 @@ export function montarMensagemNotaFiscal(dados: DadosMensagemNotaFiscal): string
   if (dados.valorTotal != null) linhas.push(`Valor: ${formatarMoeda(dados.valorTotal)}`);
   if (dados.litros != null) linhas.push(`Litros: ${dados.litros} L`);
   if (dados.motorista) linhas.push(`Motorista: ${dados.motorista}`);
-  linhas.push("", "Foto da nota fiscal em anexo.");
+  linhas.push("", fotoAnexada ? "Foto da nota fiscal em anexo." : "Anexe a foto da nota fiscal a esta mensagem.");
   return linhas.join("\n");
 }
 

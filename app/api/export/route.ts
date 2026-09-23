@@ -18,6 +18,7 @@ import { gerarPdf, type FotosLinhaPdf } from "@/lib/export/pdf";
 import { calcularResumoExport } from "@/lib/export/resumo";
 import { gerarNomeArquivoExport } from "@/lib/export/nome-arquivo";
 import type { CabecalhoExport, RegistroExport } from "@/lib/export/tipos";
+import { estadoNotaFiscal } from "@/lib/nota-fiscal/estado";
 import {
   calcularEstatisticasVeiculo,
   type AbastecimentoParaEstatistica,
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
       supabase
         .from("abastecimentos")
         .select(
-          "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, posto_nome, posto_cidade, numero_nota, veiculo_id, motorista_id, motorista_nome_livre"
+          "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, posto_nome, posto_cidade, numero_nota, veiculo_id, motorista_id, motorista_nome_livre, tem_nota_fiscal"
         )
         .eq("status", "ativo"),
       filtros,
@@ -104,7 +105,7 @@ export async function GET(request: NextRequest) {
               .from("midias")
               .select("id, entidade_id, tipo, url, criado_em")
               .eq("entidade_tipo", "abastecimento")
-              .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
+              .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro", "nota_fiscal"])
               .in("entidade_id", idsAbastecimentos)
               .order("criado_em", { ascending: false })
               .range(inicio, fim)
@@ -119,12 +120,17 @@ export async function GET(request: NextRequest) {
     mapaAlertas.set(alerta.entidade_id, atual);
   }
 
-  // As 3 fotos da captura guiada (Bloco 5) — uma linha por tipo; se houver
+  // As 3 fotos da captura guiada (Bloco 5) + a nota fiscal — uma linha por tipo; se houver
   // mais de uma do MESMO tipo, fica valendo a mais recente (mesmo critério
   // de sempre, agora aplicado por tipo).
   const mapaMidias = new Map<
     string,
-    { cupom?: { id: string; url: string }; bomba?: { id: string; url: string }; hodometro?: { id: string; url: string } }
+    {
+      cupom?: { id: string; url: string };
+      bomba?: { id: string; url: string };
+      hodometro?: { id: string; url: string };
+      notaFiscal?: { id: string; url: string };
+    }
   >();
   for (const midia of midiasBrutas) {
     const atual = mapaMidias.get(midia.entidade_id) ?? {};
@@ -132,6 +138,8 @@ export async function GET(request: NextRequest) {
     else if (midia.tipo === "foto_bomba" && !atual.bomba) atual.bomba = { id: midia.id, url: midia.url };
     else if (midia.tipo === "foto_hodometro" && !atual.hodometro)
       atual.hodometro = { id: midia.id, url: midia.url };
+    else if (midia.tipo === "nota_fiscal" && !atual.notaFiscal)
+      atual.notaFiscal = { id: midia.id, url: midia.url };
     mapaMidias.set(midia.entidade_id, atual);
   }
 
@@ -156,6 +164,8 @@ export async function GET(request: NextRequest) {
       fotoCupomUrl: midias?.cupom ? `${origem}/api/midias/${midias.cupom.id}` : null,
       fotoBombaUrl: midias?.bomba ? `${origem}/api/midias/${midias.bomba.id}` : null,
       fotoHodometroUrl: midias?.hodometro ? `${origem}/api/midias/${midias.hodometro.id}` : null,
+      notaFiscalEstado: estadoNotaFiscal(a.tem_nota_fiscal),
+      notaFiscalUrl: midias?.notaFiscal ? `${origem}/api/midias/${midias.notaFiscal.id}` : null,
     };
   });
 

@@ -22,7 +22,9 @@ describe("mensagem da nota fiscal", () => {
     expect(mensagem).toMatch(/Valor: R\$\s612,50/);
     expect(mensagem).toContain("Litros: 102.3 L");
     expect(mensagem).toContain("Motorista: João da Silva");
-    expect(mensagem).toContain("Foto da nota fiscal em anexo.");
+    // Padrão (WhatsApp/e-mail, sem anexo): instrui, nunca afirma que anexou.
+    expect(mensagem).toContain("Anexe a foto da nota fiscal a esta mensagem.");
+    expect(mensagem).not.toContain("em anexo");
   });
 
   it("omite o que não tem (sem 'null' na mensagem)", () => {
@@ -46,5 +48,13 @@ describe("links de envio", () => {
   it("e-mail: mailto com assunto e corpo, espaço como %20 (não +)", () => {
     const link = linkEmailNotaFiscal("expressomundialturismo@gmail.com", "Nota fiscal", "a b");
     expect(link).toBe("mailto:expressomundialturismo@gmail.com?subject=Nota%20fiscal&body=a%20b");
+  });
+});
+
+describe("mensagem com a foto anexada de verdade (Compartilhar)", () => {
+  it("só afirma 'em anexo' quando fotoAnexada = true", () => {
+    const mensagem = montarMensagemNotaFiscal(DADOS, true);
+    expect(mensagem).toContain("Foto da nota fiscal em anexo.");
+    expect(mensagem).not.toContain("Anexe a foto");
   });
 });

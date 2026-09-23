@@ -1,3 +1,5 @@
+import type { EstadoNotaFiscal } from "@/lib/nota-fiscal/estado";
+
 // Formato intermediário entre a query (route handler) e os geradores de
 // arquivo (excel.ts/pdf.ts) — mesmo padrão do resto do projeto (a página
 // busca o dado bruto, uma função separada transforma). `foto*Url`, quando
@@ -24,6 +26,10 @@ export interface RegistroExport {
   fotoCupomUrl: string | null;
   fotoBombaUrl: string | null;
   fotoHodometroUrl: string | null;
+  // Nota fiscal eletrônica (0019): estado + link pro arquivo (foto ou PDF)
+  // quando anexada. Uso contábil — a NF sai no export junto do abastecimento.
+  notaFiscalEstado: EstadoNotaFiscal;
+  notaFiscalUrl: string | null;
 }
 
 export interface ResumoExport {

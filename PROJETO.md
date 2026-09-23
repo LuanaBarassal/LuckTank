@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 4: botões de envio WhatsApp/e-mail, versão simples).
+Última atualização: 2026-09-23 (auditoria da nota fiscal + correções: PDF como download, NF no export, texto de envio, cabeçalho do motorista).
 
 ## Visão do produto
 
@@ -3511,6 +3511,63 @@ preenchido; a pessoa confirma o envio.
 - **Validado**: `tsc`, `lint`, `test` (212/212, +5), `build` limpos.
   Links montados conferidos nos testes; abertura real no celular não
   testada (sem ambiente — mesma pendência dos blocos anteriores).
+
+### Auditoria da NF + correções (2026-09-23)
+
+Auditoria ponta a ponta em produção (empresa descartável com dados de NF
+diferentes dos da Expresso, removida no fim com verificação independente —
+zero restos). Confirmou OK: captura/pular, `tem_nota_fiscal` via trigger,
+filtro e card de pendentes, `anexarNotaFiscal` (papel, duplicidade,
+`edicoes_log`), RLS (outra empresa: 0 linhas / 404; sem login: 307),
+dados da NF por empresa (nada hardcoded). Decisões do usuário sobre os
+achados:
+
+- **"Expresso Mundial" e "Expresso Mundial Turismo" são a mesma empresa**
+  — o CNPJ igual nas duas (seed da 0020) está certo. Nenhuma ação.
+- ✅ **PDF da nota abria em branco** (CSP global `object-src 'none'` bloqueia o
+  visualizador de PDF do Chrome). **Caminho escolhido: PDF sempre como
+  download**, não afrouxar a CSP na rota. `/api/midias/[id]` serve
+  `application/pdf` SEMPRE com `Content-Disposition: attachment` (com ou sem
+  `?baixar=1`); o lightbox troca "Abrir PDF em nova aba" por "Baixar PDF".
+  Motivos: (1) a rota serve arquivo ENVIADO POR USUÁRIO — é justamente onde
+  a CSP deve continuar estrita, não o lugar pra abrir exceção; (2) o
+  comportamento do visualizador inline varia por navegador (Chrome usa
+  plugin sujeito a `object-src`, Firefox/Safari não), então uma exceção de
+  CSP seria difícil de garantir em todos; (3) download funciona igual em
+  qualquer navegador/celular e abre no leitor de PDF do aparelho. Imagem
+  continua abrindo grande no lightbox, como sempre.
+- ✅ **NF no export (uso contábil)**:
+  - **ZIP** (`/api/export/fotos`) passou a levar as **4 mídias** de cada
+    abastecimento — antes levava SÓ o cupom (bomba/hodômetro também ficavam
+    de fora). Nome ganhou o tipo no fim: `<data>_<veículo>_<motorista>_cupom.jpg`,
+    `_bomba`, `_hodometro`, `_nota-fiscal.jpg|pdf` (`gerarNomeFotoZip` com
+    parâmetro `tipo`, dedup por tipo). `baixarFotoBruta` reconhece PDF
+    (antes sairia `.bin`). Nomes gerados em sequência depois do download em
+    lote, pra ordem/dedup serem determinísticas.
+  - **Excel/PDF**: coluna **"Nota Fiscal"** com o estado — "Tem nota" /
+    "Pendente" / "Anterior ao recurso" (`lib/nota-fiscal/estado.ts`, testado,
+    a partir de `tem_nota_fiscal` true/false/null). No Excel, "Tem nota" é
+    link pro arquivo (mesma rota autenticada das fotos) e "Pendente" sai em
+    negrito âmbar. A coluna antiga "Nota" (número impresso no cupom) virou
+    "Nº nota" no PDF pra não confundir.
+- ✅ **Texto da mensagem de envio não afirma mais anexo que não existe**:
+  WhatsApp/e-mail (wa.me/mailto — nenhum anexa arquivo) terminam com
+  "Anexe a foto da nota fiscal a esta mensagem."; só o "Compartilhar foto da
+  nota" (Web Share, que anexa de verdade) diz "Foto da nota fiscal em
+  anexo." (`montarMensagemNotaFiscal(dados, fotoAnexada)`). E-mail com
+  anexo real (Resend) continua fora — decisão anterior de manter simples.
+- ✅ **Bug pré-existente: cabeçalho do motorista** continuava "Nenhum
+  abastecimento registrado ainda" depois de registrar. Fluxo chama
+  `router.refresh()` após envio online bem-sucedido — a página
+  (`force-dynamic`) busca de novo o último abastecimento real sem perder o
+  estado da tela de sucesso. Efeito junto: o KM mínimo do PRÓXIMO registro
+  na mesma aba também passa a ser o atualizado (antes a checagem no client
+  usava o KM de quando a página abriu; o servidor já barrava de qualquer
+  jeito). Não cobre o caso de item da fila offline sincronizado depois.
+- **Fora desta rodada (usuário testa no celular)**: fotos reais de
+  bomba/hodômetro, caminho offline com NF, botão "Compartilhar foto".
+  Testes automatizados do trigger/Server Action: opcional, depois.
+- **Validado**: `tsc`, `lint`, `test` (216/216, +4), `build` limpos.
 
 ## Regras invariantes (não podem quebrar)
 

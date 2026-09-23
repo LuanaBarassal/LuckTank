@@ -43,7 +43,14 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: "Foto não encontrada." }, { status: 404 });
   }
 
-  const baixar = request.nextUrl.searchParams.get("baixar") === "1";
+  // PDF (nota fiscal anexada pelo escritório) SEMPRE como download, nunca
+  // renderizado inline: a CSP global (`object-src 'none'`, next.config.mjs)
+  // impede o visualizador de PDF do Chrome e a aba abria em branco. Em vez de
+  // afrouxar a CSP numa rota que serve arquivo enviado por usuário, o PDF sai
+  // como anexo e abre no leitor de PDF do aparelho — funciona igual em
+  // qualquer navegador e não expõe nada novo na nossa origem.
+  const ehPdf = (arquivo.type || "").includes("pdf");
+  const baixar = ehPdf || request.nextUrl.searchParams.get("baixar") === "1";
   const buffer = Buffer.from(await arquivo.arrayBuffer());
   const nomeArquivo = caminho.split("/").pop() ?? `comprovante-${params.id}`;
 

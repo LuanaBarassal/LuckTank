@@ -32,6 +32,18 @@ describe("gerarNomeFotoZip", () => {
     expect(heic.includes("-2")).toBe(false);
   });
 
+  it("adiciona o tipo da foto no fim do nome (as 4 fotos do mesmo abastecimento não colidem)", () => {
+    const nomes = new Map<string, number>();
+    const args = ["2026-07-03", "1450 · EXM1A23", "Marcos Vieira"] as const;
+    expect(gerarNomeFotoZip(...args, "jpg", nomes, "cupom")).toBe("20260703_1450EXM1A23_MarcosVieira_cupom.jpg");
+    expect(gerarNomeFotoZip(...args, "jpg", nomes, "bomba")).toBe("20260703_1450EXM1A23_MarcosVieira_bomba.jpg");
+    expect(gerarNomeFotoZip(...args, "pdf", nomes, "nota-fiscal")).toBe(
+      "20260703_1450EXM1A23_MarcosVieira_nota-fiscal.pdf"
+    );
+    // Segundo abastecimento no mesmo dia: deduplica por tipo.
+    expect(gerarNomeFotoZip(...args, "jpg", nomes, "cupom")).toBe("20260703_1450EXM1A23_MarcosVieira_cupom-2.jpg");
+  });
+
   it("usa 'comprovante' como base quando data/veículo/motorista normalizam pra vazio", () => {
     const nomes = new Map<string, number>();
     expect(gerarNomeFotoZip("", "", "", "jpg", nomes)).toBe("comprovante.jpg");

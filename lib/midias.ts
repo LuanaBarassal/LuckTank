@@ -74,8 +74,11 @@ export async function baixarFotoBruta(
   const { data: arquivo, error } = await admin.storage.from("comprovantes").download(caminho);
   if (error || !arquivo) return null;
 
-  const formato = formatoImagemDoMime(arquivo.type || "");
-  const extensao = formato === "jpeg" ? "jpg" : (formato ?? "bin");
+  // PDF: nota fiscal anexada pelo escritório (DANFE) — sem isso sairia
+  // ".bin" no zip.
+  const mime = arquivo.type || "";
+  const formato = formatoImagemDoMime(mime);
+  const extensao = mime.includes("pdf") ? "pdf" : formato === "jpeg" ? "jpg" : (formato ?? "bin");
   return {
     buffer: Buffer.from(await arquivo.arrayBuffer()),
     extensao,

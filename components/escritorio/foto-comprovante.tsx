@@ -22,8 +22,8 @@ interface Props {
   // caçar isso no painel de Alertas separado.
   destaque?: boolean;
   // Nota fiscal anexada pelo escritório pode ser PDF (DANFE) — sem <img>:
-  // miniatura vira um selo "PDF" e o lightbox oferece abrir em outra aba
-  // (a rota manda X-Frame-Options: DENY, então iframe não é opção) ou baixar.
+  // miniatura vira um selo "PDF" e o lightbox só oferece baixar (a rota
+  // serve PDF sempre como anexo — CSP global bloqueia o visualizador inline).
   ehPdf?: boolean;
 }
 
@@ -90,14 +90,16 @@ export default function FotoComprovante({ midiaId, rotulo, destaque, ehPdf }: Pr
               <div className="flex flex-col items-center gap-3 rounded-xl bg-navy-900 px-10 py-8 text-center">
                 <span className="text-4xl">📄</span>
                 <p className="text-sm text-slate-300">Nota fiscal em PDF.</p>
+                {/* Download, não "abrir em nova aba": a rota sempre serve PDF
+                    como anexo (ver app/api/midias/[id]/route.ts) — abre no
+                    leitor de PDF do aparelho. */}
                 <a
-                  href={urlVisualizacao}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={urlDownload}
                   className="rounded-lg bg-cyan-500/20 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/30"
                 >
-                  Abrir PDF em nova aba
+                  Baixar PDF
                 </a>
+                <p className="text-xs text-slate-500">Abre no leitor de PDF do seu computador/celular.</p>
               </div>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element -- mesma rota autenticada acima, só em tamanho grande
@@ -107,13 +109,15 @@ export default function FotoComprovante({ midiaId, rotulo, destaque, ehPdf }: Pr
                 className="max-h-[80vh] w-full rounded-xl object-contain"
               />
             )}
-            <div className="flex items-center justify-between">
-              <a
-                href={urlDownload}
-                className="rounded-lg bg-navy-900 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-navy-800"
-              >
-                Baixar original
-              </a>
+            <div className={cn("flex items-center", ehPdf ? "justify-end" : "justify-between")}>
+              {!ehPdf && (
+                <a
+                  href={urlDownload}
+                  className="rounded-lg bg-navy-900 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-navy-800"
+                >
+                  Baixar original
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => setAberto(false)}

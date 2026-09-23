@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import PassoNome from "@/components/motorista/passo-nome";
 import PassoFoto from "@/components/motorista/passo-foto";
@@ -119,6 +120,7 @@ export default function FluxoAbastecimento({
   ultimoAbastecimento,
   dadosNotaFiscal,
 }: Props) {
+  const router = useRouter();
   const estaOnline = useOnlineStatus();
   const [passo, setPasso] = useState<Passo>("nome");
 
@@ -512,6 +514,12 @@ export default function FluxoAbastecimento({
       setEnviando(false);
       setSalvoOffline(false);
       setPasso("sucesso");
+      // Cabeçalho ("Último abastecimento: ...") e o KM mínimo vêm do Server
+      // Component (/r/[qrToken], nunca cacheado) — sem isto continuavam
+      // mostrando o estado de ANTES do registro ("Nenhum abastecimento
+      // registrado ainda") até recarregar a página. `refresh` busca de novo
+      // do banco sem perder o estado desta tela (sucesso + botões de envio).
+      router.refresh();
     } catch {
       // Conexão caiu no meio do envio — não perde o registro, guarda local.
       await enfileirarOffline();
