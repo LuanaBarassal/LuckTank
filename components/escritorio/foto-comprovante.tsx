@@ -21,9 +21,13 @@ interface Props {
   // a ver de relance QUAL das 3 fotos motivou a suspeita, sem precisar
   // caçar isso no painel de Alertas separado.
   destaque?: boolean;
+  // Nota fiscal anexada pelo escritório pode ser PDF (DANFE) — sem <img>:
+  // miniatura vira um selo "PDF" e o lightbox oferece abrir em outra aba
+  // (a rota manda X-Frame-Options: DENY, então iframe não é opção) ou baixar.
+  ehPdf?: boolean;
 }
 
-export default function FotoComprovante({ midiaId, rotulo, destaque }: Props) {
+export default function FotoComprovante({ midiaId, rotulo, destaque, ehPdf }: Props) {
   const [aberto, setAberto] = useState(false);
   const urlVisualizacao = `/api/midias/${midiaId}`;
   const urlDownload = `/api/midias/${midiaId}?baixar=1`;
@@ -50,8 +54,14 @@ export default function FotoComprovante({ midiaId, rotulo, destaque }: Props) {
           aria-label={rotulo ? `Ver foto: ${rotulo}` : "Ver foto do comprovante"}
           title={destaque ? `${rotulo ?? "Foto"} — envolvida num alerta de divergência` : rotulo}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element -- vem de rota autenticada nossa, não de storage otimizável pelo next/image */}
-          <img src={urlVisualizacao} alt="Miniatura do comprovante" className="h-full w-full object-cover" />
+          {ehPdf ? (
+            <span className="flex h-full w-full items-center justify-center bg-navy-950 text-[11px] font-bold text-cyan-300">
+              PDF
+            </span>
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- vem de rota autenticada nossa, não de storage otimizável pelo next/image
+            <img src={urlVisualizacao} alt="Miniatura do comprovante" className="h-full w-full object-cover" />
+          )}
         </button>
         {rotulo && (
           <span
@@ -76,12 +86,27 @@ export default function FotoComprovante({ midiaId, rotulo, destaque }: Props) {
             onClick={(evento) => evento.stopPropagation()}
           >
             {rotulo && <p className="text-center text-sm font-semibold text-white">{rotulo}</p>}
-            {/* eslint-disable-next-line @next/next/no-img-element -- mesma rota autenticada acima, só em tamanho grande */}
-            <img
-              src={urlVisualizacao}
-              alt="Comprovante do abastecimento"
-              className="max-h-[80vh] w-full rounded-xl object-contain"
-            />
+            {ehPdf ? (
+              <div className="flex flex-col items-center gap-3 rounded-xl bg-navy-900 px-10 py-8 text-center">
+                <span className="text-4xl">📄</span>
+                <p className="text-sm text-slate-300">Nota fiscal em PDF.</p>
+                <a
+                  href={urlVisualizacao}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg bg-cyan-500/20 px-4 py-2 text-sm font-semibold text-cyan-300 hover:bg-cyan-500/30"
+                >
+                  Abrir PDF em nova aba
+                </a>
+              </div>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- mesma rota autenticada acima, só em tamanho grande
+              <img
+                src={urlVisualizacao}
+                alt="Comprovante do abastecimento"
+                className="max-h-[80vh] w-full rounded-xl object-contain"
+              />
+            )}
             <div className="flex items-center justify-between">
               <a
                 href={urlDownload}

@@ -1,9 +1,12 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { Card, CardTitle } from "@/components/ui/card";
 import GraficoBarra from "@/components/escritorio/grafico-barra";
 import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento";
 import LinkExportacaoProtegida from "@/components/escritorio/link-exportacao-protegida";
+import BotaoAnexarNotaFiscal from "@/components/escritorio/botao-anexar-nota-fiscal";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import {
   parseFiltrosAbastecimento,
@@ -20,6 +23,13 @@ import {
   agregarPostosUtilizados,
   type AbastecimentoAgregavel,
 } from "@/lib/dashboard/agregacoes";
+
+type AbastecimentoDashboard = AbastecimentoAgregavel & { tem_nota_fiscal: boolean | null };
+
+// Lista de "quais faltam" no dashboard — o total vem da lista completa do
+// período (acima); aqui só as mais recentes pra ação rápida. Pra ver todas,
+// o filtro "Só nota fiscal pendente" na aba de cada veículo.
+const LIMITE_NOTAS_PENDENTES = 20;
 
 function SemDados() {
   return (
@@ -45,12 +55,12 @@ export default async function DashboardPage({
   // Paginado (não um único `await` direto) — ver lib/supabase/paginar.ts:
   // sem isso, o teto default do PostgREST (1000 linhas) truncaria o
   // dashboard em silêncio pra uma empresa com histórico grande.
-  const lista: AbastecimentoAgregavel[] = await buscarTodasLinhas((inicio, fim) =>
+  const lista: AbastecimentoDashboard[] = await buscarTodasLinhas((inicio, fim) =>
     aplicarFiltrosQuery(
       supabase
         .from("abastecimentos")
         .select(
-          "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome"
+          "data_abastecimento, litros, valor_total, consumo_kml, veiculo_id, motorista_id, motorista_nome_livre, posto_nome, tem_nota_fiscal"
         )
         .eq("status", "ativo"),
       filtros,
@@ -79,6 +89,24 @@ export default async function DashboardPage({
 
   const periodoTexto = `${formatarDataBr(periodo.de)} a ${formatarDataBr(periodo.ate)}`;
 
+  const usuario = await getUsuarioAtual();
+  const podeAnexarNota = usuario?.papel === "gerente" || usuario?.papel === "administrador";
+  const totalNotasPendentes = lista.filter((a) => a.tem_nota_fiscal === false).length;
+  const { data: notasPendentes } = totalNotasPendentes
+    ? await aplicarFiltrosQuery(
+        supabase
+          .from("abastecimentos")
+          .select("id, data_abastecimento, valor_total, litros, veiculo_id, motorista_id, motorista_nome_livre")
+          .eq("status", "ativo")
+          .eq("tem_nota_fiscal", false),
+        filtros,
+        periodo
+      )
+        .order("data_abastecimento", { ascending: false })
+        .order("criado_em", { ascending: false })
+        .limit(LIMITE_NOTAS_PENDENTES)
+    : { data: [] };
+
   // Mesmo filtro resolvido usado na tela — de/ate já vêm calculados aqui
   // (não recomputados no clique), então o export nunca pode divergir do que
   // está na tela no momento, mesmo que "hoje" mude entre o carregamento da
@@ -89,6 +117,7 @@ export default async function DashboardPage({
   if (filtros.veiculoId) paramsExport.set("veiculo_id", filtros.veiculoId);
   if (filtros.motoristaId) paramsExport.set("motorista_id", filtros.motoristaId);
   if (filtros.motoristaNomeLivre) paramsExport.set("motorista_nome", filtros.motoristaNomeLivre);
+  if (filtros.notaPendente) paramsExport.set("nota", "pendente");
   const queryExport = paramsExport.toString();
 
   const RESUMO = [
@@ -131,6 +160,66 @@ export default async function DashboardPage({
           ))}
         </div>
       </div>
+
+      {totalNotasPendentes > 0 && (
+        <Card variant="dark" className="border-atencao-500/40">
+          <CardTitle variant="dark">
+            Nota fiscal pendente
+            <span className="ml-2 rounded-full bg-atencao-500/15 px-2 py-0.5 text-xs font-semibold text-atencao-400">
+              {totalNotasPendentes} no período
+            </span>
+          </CardTitle>
+          <p className="-mt-2 mb-4 text-xs text-slate-500">
+            Abastecimentos registrados sem a nota fiscal eletrônica.
+            {podeAnexarNota
+              ? " Clique em “Anexar NF” pra enviar a foto ou o PDF da nota."
+              : " Gerente ou administrador podem anexar a nota."}
+            {totalNotasPendentes > LIMITE_NOTAS_PENDENTES &&
+              ` Mostrando as ${LIMITE_NOTAS_PENDENTES} mais recentes — use o filtro “Só nota fiscal pendente” na aba do veículo pra ver todas.`}
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-navy-800 text-slate-400">
+                  <th className="py-3 pr-5 font-medium">Data</th>
+                  <th className="py-3 pr-5 font-medium">Veículo</th>
+                  <th className="py-3 pr-5 font-medium">Litros</th>
+                  <th className="py-3 pr-5 font-medium">Total</th>
+                  <th className="py-3 pr-5 font-medium">Motorista</th>
+                  {podeAnexarNota && <th className="py-3 pr-5 font-medium">Nota</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {(notasPendentes ?? []).map((a) => (
+                  <tr key={a.id} className="border-b border-navy-800/50 text-slate-200">
+                    <td className="py-3 pr-5">{formatarDataBr(a.data_abastecimento)}</td>
+                    <td className="py-3 pr-5">
+                      <Link
+                        href={`/onibus/${a.veiculo_id}?nota=pendente&de=${periodo.de}&ate=${periodo.ate}`}
+                        className="font-medium text-cyan-400 underline-offset-2 hover:underline"
+                      >
+                        {mapaPlacas.get(a.veiculo_id) ?? "—"}
+                      </Link>
+                    </td>
+                    <td className="py-3 pr-5">{a.litros} L</td>
+                    <td className="py-3 pr-5">{formatarMoeda(a.valor_total)}</td>
+                    <td className="py-3 pr-5">
+                      {a.motorista_nome_livre ??
+                        (a.motorista_id ? mapaMotoristas.get(a.motorista_id) : null) ??
+                        "—"}
+                    </td>
+                    {podeAnexarNota && (
+                      <td className="py-2 pr-5">
+                        <BotaoAnexarNotaFiscal abastecimentoId={a.id} />
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-2">
         <Card variant="dark">

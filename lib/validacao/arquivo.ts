@@ -72,3 +72,32 @@ export function extensaoSeguraFoto(mimeType: string): string {
   if (mimeType.includes("heic") || mimeType.includes("heif")) return "heic";
   return "bin";
 }
+
+// Nota fiscal anexada pelo escritório (Bloco 2 da NF): além de foto, aceita
+// PDF — a DANFE costuma chegar por e-mail como PDF, não como foto. Mesma
+// filosofia do resto do arquivo: decide pelos bytes de assinatura reais,
+// nunca pelo `file.type`/nome declarados. Teto do PDF menor que o da foto
+// porque o PDF não passa pela compressão do navegador e o corpo de uma
+// Server Action/function na Vercel não passa de ~4,5MB.
+export const TAMANHO_MAXIMO_PDF_NOTA_BYTES = 4 * 1024 * 1024;
+
+export type ResultadoValidacaoNotaFiscal =
+  | { valido: true; extensao: string; contentType: string }
+  | { valido: false; erro: string };
+
+export function validarArquivoNotaFiscal(file: File, buffer: Buffer): ResultadoValidacaoNotaFiscal {
+  if (comecaCom(buffer, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
+    // "%PDF-"
+    if (file.size > TAMANHO_MAXIMO_PDF_NOTA_BYTES) {
+      return { valido: false, erro: "PDF muito grande (máximo 4MB)." };
+    }
+    return { valido: true, extensao: "pdf", contentType: "application/pdf" };
+  }
+
+  if (file.size > 0 && !assinaturaDeImagemValida(buffer)) {
+    return { valido: false, erro: "Envie uma foto ou um PDF da nota." };
+  }
+  const foto = validarFoto(file, buffer);
+  if (!foto.valido) return { valido: false, erro: foto.erro ?? "Arquivo inválido." };
+  return { valido: true, extensao: extensaoSeguraFoto(file.type), contentType: file.type || "image/jpeg" };
+}

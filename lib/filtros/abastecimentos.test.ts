@@ -15,6 +15,7 @@ describe("parseFiltrosAbastecimento", () => {
       veiculoId: "a1b2c3d4-0000-4000-8000-000000000000",
       motoristaId: "b1b2c3d4-0000-4000-8000-000000000000",
       motoristaNomeLivre: null,
+      notaPendente: false,
     });
   });
 
@@ -33,6 +34,12 @@ describe("parseFiltrosAbastecimento", () => {
     expect(filtros.motoristaId).toBeNull();
   });
 
+  it("lê ?nota=pendente e ignora qualquer outro valor", () => {
+    expect(parseFiltrosAbastecimento({ nota: "pendente" }).notaPendente).toBe(true);
+    expect(parseFiltrosAbastecimento({ nota: "anexada" }).notaPendente).toBe(false);
+    expect(parseFiltrosAbastecimento({}).notaPendente).toBe(false);
+  });
+
   it("lida com searchParams vazio", () => {
     const filtros = parseFiltrosAbastecimento({});
     expect(filtros).toEqual({
@@ -41,6 +48,7 @@ describe("parseFiltrosAbastecimento", () => {
       veiculoId: null,
       motoristaId: null,
       motoristaNomeLivre: null,
+      notaPendente: false,
     });
   });
 });
@@ -81,7 +89,7 @@ describe("resolverPeriodo", () => {
 // supabase-js: cada filtro devolve o próprio builder) — só pra confirmar que
 // aplicarFiltrosQuery monta a cadeia certa sem precisar de um banco real.
 function criarQueryFalsa() {
-  const chamadas: [string, string, string][] = [];
+  const chamadas: [string, string, string | boolean][] = [];
   const builder = {
     gte(coluna: string, valor: string) {
       chamadas.push(["gte", coluna, valor]);
@@ -91,7 +99,7 @@ function criarQueryFalsa() {
       chamadas.push(["lte", coluna, valor]);
       return builder;
     },
-    eq(coluna: string, valor: string) {
+    eq(coluna: string, valor: string | boolean) {
       chamadas.push(["eq", coluna, valor]);
       return builder;
     },
@@ -105,7 +113,7 @@ describe("aplicarFiltrosQuery", () => {
     const query = criarQueryFalsa();
     aplicarFiltrosQuery(
       query,
-      { de: null, ate: null, veiculoId: null, motoristaId: null, motoristaNomeLivre: null },
+      { de: null, ate: null, veiculoId: null, motoristaId: null, motoristaNomeLivre: null, notaPendente: false },
       { de: "2026-03-01", ate: "2026-03-15" }
     );
     expect(query.chamadas).toEqual([
@@ -124,6 +132,7 @@ describe("aplicarFiltrosQuery", () => {
         veiculoId: "veiculo-1",
         motoristaId: "motorista-1",
         motoristaNomeLivre: null,
+        notaPendente: false,
       },
       { de: "2026-03-01", ate: "2026-03-15" }
     );
@@ -145,9 +154,27 @@ describe("aplicarFiltrosQuery", () => {
         veiculoId: null,
         motoristaId: null,
         motoristaNomeLivre: "João da Silva",
+        notaPendente: false,
       },
       { de: "2026-03-01", ate: "2026-03-15" }
     );
     expect(query.chamadas).toContainEqual(["eq", "motorista_nome_livre", "João da Silva"]);
+  });
+
+  it("filtra só abastecimentos sem nota fiscal quando notaPendente", () => {
+    const query = criarQueryFalsa();
+    aplicarFiltrosQuery(
+      query,
+      {
+        de: null,
+        ate: null,
+        veiculoId: null,
+        motoristaId: null,
+        motoristaNomeLivre: null,
+        notaPendente: true,
+      },
+      { de: "2026-03-01", ate: "2026-03-15" }
+    );
+    expect(query.chamadas).toContainEqual(["eq", "tem_nota_fiscal", false]);
   });
 });

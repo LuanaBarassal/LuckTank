@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-09-23 (nota fiscal eletrônica do abastecimento — Bloco 1: captura opcional pelo motorista).
+Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 2: estado "nota pendente" + escritório anexa depois).
 
 ## Visão do produto
 
@@ -3371,6 +3371,67 @@ cobre o **Bloco 1**.
   **Ponta a ponta pendente**: `.env.local` local foi sobrescrito pelo
   Vercel CLI (só tem `VERCEL_OIDC_TOKEN`, sem chaves do Supabase/Gemini),
   então não deu pra subir o app contra o banco nesta sessão.
+
+### Bloco 2 — Estado "nota pendente" + escritório anexa depois (2026-09-23)
+
+- ✅ **Migration `0019_abastecimentos_nota_fiscal.sql`** (escrita, **ainda
+  não aplicada** — ver pendências): coluna `abastecimentos.tem_nota_fiscal`
+  com 3 estados — `true` (tem NF), `false` (pendente; default de todo
+  registro novo), `null` (histórico anterior ao recurso — a NF nunca foi
+  pedida pelo sistema, então não vira pendência; sem isso todo o histórico
+  apareceria como "pendente" de uma vez). Backfill: `null`, ou `true` se já
+  houver `midias.tipo = 'nota_fiscal'`. Índice parcial pro filtro de
+  pendentes.
+- ✅ **Flag mantida por TRIGGER em `midias`** (insert/delete de
+  `tipo = 'nota_fiscal'`), `security definer` — não pelo código. Os dois
+  caminhos de escrita (rota do motorista e Server Action do escritório)
+  ficam consistentes sem duplicar lógica, a flag nasce na mesma transação
+  da mídia, e `abastecimentos` continua sem policy de UPDATE pra client
+  autenticado (0006 intacta).
+- ✅ **Filtro `?nota=pendente`** em `lib/filtros/abastecimentos.ts`
+  (`notaPendente` → `.eq("tem_nota_fiscal", false)`) — mesmo filtro
+  compartilhado por dashboard, aba do veículo e export (Excel/PDF/ZIP
+  respeitam o recorte). Botão "Só nota fiscal pendente" na barra de filtros.
+- ✅ **Dashboard**: card "Nota fiscal pendente · N no período" (só aparece se
+  N > 0) com a lista das 20 mais recentes (data, veículo com link pra aba já
+  filtrada, litros, total, motorista) e botão "Anexar NF" por linha.
+- ✅ **Aba do veículo (histórico)**: 4ª miniatura "NF" ao lado de cupom/
+  bomba/hodômetro — clicável, abre grande, "Baixar original" (mesmo
+  `FotoComprovante`/`/api/midias/[id]`). Sem NF: selo "NF pendente" na
+  data + botão "Anexar NF" no lugar da miniatura (gerente/admin) ou
+  placeholder âmbar (supervisor).
+- ✅ **`anexarNotaFiscal` (Server Action, `onibus/actions.ts`)** — padrão do
+  invariante #4: papel gerente/administrador checado no servidor, reconfirma
+  que o abastecimento é da empresa de quem chama, recusa se excluído ou se
+  já tem NF, upload via service role no mesmo esquema de path do motorista
+  (`<registro_uuid>-nota-fiscal.<ext>`), insert em `midias` (se falhar,
+  remove o arquivo do Storage), e grava `edicoes_log` (`acao = 'update'`,
+  `antes` = linha antes, `depois` = linha depois + `nota_fiscal_anexada:
+  { midia_id, arquivo }`). Sem PIN (é adição de evidência, não destrutiva).
+- ✅ **Foto OU PDF** — DANFE costuma chegar por e-mail em PDF.
+  `validarArquivoNotaFiscal` (`lib/validacao/arquivo.ts`, com testes) decide
+  pela assinatura real (`%PDF-` ou as de imagem já existentes), PDF até 4MB.
+  Foto é comprimida no navegador (1600px/0.85 — texto miúdo da DANFE
+  legível; o fluxo do motorista passou a usar o mesmo pra NF). PDF no
+  histórico aparece como selo "PDF" e o lightbox oferece "Abrir PDF em nova
+  aba" (iframe não é opção: a rota manda `X-Frame-Options: DENY`) + baixar.
+- ✅ **`next.config.mjs`**: `experimental.serverActions.bodySizeLimit =
+  "5mb"` (default do Next 14 é 1MB). O teto real continua sendo o da
+  Vercel (~4,5MB). **Achado de passagem, não corrigido**: `atualizarFotoVeiculo`
+  sobe a foto do veículo sem comprimir — antes desta mudança, qualquer foto
+  > 1MB falhava ali; agora passa até ~4,5MB.
+- **`types/database.ts` editado À MÃO** (só `tem_nota_fiscal: boolean |
+  null` em Row/Insert/Update, no formato exato do gerador) porque o Supabase
+  CLI não está logado nesta máquina. Regenerar com `npx supabase gen types
+  typescript --linked` depois do `db push` — deve sair idêntico.
+- **Validado**: `tsc`, `lint`, `test` (197/197, +7 novos: filtro de nota e
+  validação de arquivo NF), `build` limpos.
+- **Pendências**:
+  1. **Aplicar a 0019 ANTES de subir este código** (`npx supabase login` +
+     `npx supabase db push`) — dashboard e aba do veículo selecionam
+     `tem_nota_fiscal` e quebram sem a coluna.
+  2. Ponta a ponta no navegador (Blocos 1 e 2) — depende das chaves do
+     Supabase no `.env.local`.
 
 ## Regras invariantes (não podem quebrar)
 

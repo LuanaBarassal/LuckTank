@@ -13,6 +13,8 @@ export interface FiltrosAbastecimento {
   veiculoId: string | null;
   motoristaId: string | null;
   motoristaNomeLivre: string | null;
+  // `?nota=pendente` — só abastecimentos sem nota fiscal eletrônica anexada.
+  notaPendente: boolean;
 }
 
 const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
@@ -38,6 +40,7 @@ export function parseFiltrosAbastecimento(searchParams: SearchParamsPagina): Fil
     veiculoId: veiculoId && REGEX_UUID.test(veiculoId) ? veiculoId : null,
     motoristaId: motoristaId && REGEX_UUID.test(motoristaId) ? motoristaId : null,
     motoristaNomeLivre: campo(searchParams, "motorista_nome"),
+    notaPendente: campo(searchParams, "nota") === "pendente",
   };
 }
 
@@ -59,7 +62,7 @@ export function resolverPeriodo(
   return calcularPeriodo("esteMes", agora);
 }
 
-// Aplica data + veículo + motorista numa query já construída (mesma cadeia
+// Aplica data + veículo + motorista (+ nota pendente) numa query já construída (mesma cadeia
 // de `.gte/.lte/.eq` usada nos 3 lugares que precisam concordar: dashboard,
 // aba do ônibus e export). `any` interno é só implementação — a assinatura
 // exportada preserva o tipo de entrada, então o chamador mantém o shape
@@ -68,12 +71,13 @@ export function aplicarFiltrosQuery<
   Q extends {
     gte: (coluna: string, valor: string) => Q;
     lte: (coluna: string, valor: string) => Q;
-    eq: (coluna: string, valor: string) => Q;
+    eq: (coluna: string, valor: string | boolean) => Q;
   },
 >(query: Q, filtros: FiltrosAbastecimento, periodo: { de: string; ate: string }): Q {
   let q = query.gte("data_abastecimento", periodo.de).lte("data_abastecimento", periodo.ate);
   if (filtros.veiculoId) q = q.eq("veiculo_id", filtros.veiculoId);
   if (filtros.motoristaId) q = q.eq("motorista_id", filtros.motoristaId);
   if (filtros.motoristaNomeLivre) q = q.eq("motorista_nome_livre", filtros.motoristaNomeLivre);
+  if (filtros.notaPendente) q = q.eq("tem_nota_fiscal", false);
   return q;
 }

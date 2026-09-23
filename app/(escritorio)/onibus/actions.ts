@@ -1,6 +1,6 @@
 "use server";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -8,7 +8,7 @@ import { getUsuarioAtual } from "@/lib/auth/contexto-usuario";
 import { registrarLog } from "@/lib/edicoes-log";
 import { verificarPinDoUsuario } from "@/lib/auth/pin";
 import { veiculoSchema, veiculoEdicaoSchema } from "@/lib/validacao/schemas";
-import { validarFoto, extensaoSeguraFoto } from "@/lib/validacao/arquivo";
+import { validarFoto, extensaoSeguraFoto, validarArquivoNotaFiscal } from "@/lib/validacao/arquivo";
 
 type Resultado<T> = { data: T; error?: undefined } | { data?: undefined; error: string };
 
@@ -251,6 +251,88 @@ export async function excluirAbastecimento(id: string, pin: string): Promise<Res
   revalidatePath("/agenda");
   revalidatePath("/alertas");
   return { data: { id } };
+}
+
+// Escritório anexa a nota fiscal eletrônica a um abastecimento que ficou
+// com a nota pendente (motorista pulou a etapa no fluxo do QR). Mesmo
+// padrão de excluirAbastecimento (invariante #4): papel checado aqui, toda
+// escrita via service role depois de reconfirmar que o abastecimento é da
+// empresa de quem chama, e rastro em edicoes_log. Sem PIN — é uma adição de
+// evidência, não uma mutação destrutiva. `tem_nota_fiscal` NÃO é setado
+// aqui: o trigger da 0019 atualiza a flag na mesma transação do insert em
+// midias (mesma fonte de verdade do caminho do motorista).
+export async function anexarNotaFiscal(
+  abastecimentoId: string,
+  formData: FormData
+): Promise<Resultado<{ midiaId: string }>> {
+  const usuario = await getUsuarioAtual();
+  if (!usuario) return { error: "Não autenticado." };
+  if (!["gerente", "administrador"].includes(usuario.papel)) {
+    return { error: "Só gerente ou administrador podem anexar a nota fiscal." };
+  }
+
+  const arquivo = formData.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) {
+    return { error: "Selecione a foto ou o PDF da nota." };
+  }
+  const buffer = Buffer.from(await arquivo.arrayBuffer());
+  const validacao = validarArquivoNotaFiscal(arquivo, buffer);
+  if (!validacao.valido) return { error: validacao.erro };
+
+  const admin = createAdminClient();
+  const { data: antes } = await admin
+    .from("abastecimentos")
+    .select("*")
+    .eq("id", abastecimentoId)
+    .eq("empresa_id", usuario.empresa_id)
+    .single();
+
+  if (!antes) return { error: "Abastecimento não encontrado." };
+  if (antes.status !== "ativo") return { error: "Este abastecimento foi excluído." };
+  if (antes.tem_nota_fiscal) return { error: "Este abastecimento já tem nota fiscal." };
+
+  // Mesmo esquema de path da rota do motorista (registro_uuid + sufixo +
+  // extensão de lista fechada — nunca o nome declarado do arquivo).
+  const caminho = `${antes.empresa_id}/${antes.veiculo_id}/${antes.registro_uuid}-nota-fiscal.${validacao.extensao}`;
+  const { error: uploadError } = await admin.storage
+    .from("comprovantes")
+    .upload(caminho, buffer, { contentType: validacao.contentType, upsert: true });
+  if (uploadError) return { error: "Não foi possível enviar o arquivo." };
+
+  const { data: publicUrlData } = admin.storage.from("comprovantes").getPublicUrl(caminho);
+  const { data: midia, error: midiaError } = await admin
+    .from("midias")
+    .insert({
+      empresa_id: antes.empresa_id,
+      entidade_tipo: "abastecimento",
+      entidade_id: antes.id,
+      url: publicUrlData.publicUrl,
+      tipo: "nota_fiscal",
+      hash_sha256: createHash("sha256").update(buffer).digest("hex"),
+    })
+    .select("id")
+    .single();
+
+  if (midiaError || !midia) {
+    await admin.storage.from("comprovantes").remove([caminho]);
+    return { error: "Não foi possível anexar a nota." };
+  }
+
+  const { data: depois } = await admin.from("abastecimentos").select("*").eq("id", antes.id).single();
+
+  await registrarLog({
+    empresaId: usuario.empresa_id,
+    tabela: "abastecimentos",
+    registroId: antes.id,
+    usuarioId: usuario.id,
+    acao: "update",
+    antes,
+    depois: { ...(depois ?? antes), nota_fiscal_anexada: { midia_id: midia.id, arquivo: caminho } },
+  });
+
+  revalidatePath(`/onibus/${antes.veiculo_id}`);
+  revalidatePath("/dashboard");
+  return { data: { midiaId: midia.id } };
 }
 
 export async function alternarAtivoVeiculo(id: string, ativo: boolean): Promise<Resultado<{ id: string }>> {

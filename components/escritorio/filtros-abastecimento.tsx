@@ -35,6 +35,7 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
   const veiculoId = searchParams.get("veiculo_id");
   const motoristaIdParam = searchParams.get("motorista_id");
   const motoristaNomeParam = searchParams.get("motorista_nome");
+  const notaPendente = searchParams.get("nota") === "pendente";
 
   const valorMotorista = motoristaIdParam
     ? `id:${motoristaIdParam}`
@@ -83,7 +84,9 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
     }
   };
 
-  const temFiltroAtivo = Boolean(de || ate || veiculoId || motoristaIdParam || motoristaNomeParam);
+  const temFiltroAtivo = Boolean(
+    de || ate || veiculoId || motoristaIdParam || motoristaNomeParam || notaPendente
+  );
 
   return (
     <div className="flex flex-col gap-4 rounded-2xl border border-navy-800 bg-navy-900 p-5">
@@ -111,6 +114,20 @@ export default function FiltrosAbastecimento({ veiculos, opcoesMotorista }: Filt
         >
           Personalizado
         </span>
+
+        <button
+          type="button"
+          onClick={() => atualizarParams({ nota: notaPendente ? null : "pendente" })}
+          aria-pressed={notaPendente}
+          className={cn(
+            "rounded-full px-3 py-1.5 text-xs font-medium transition",
+            notaPendente
+              ? "bg-atencao-500/20 text-atencao-400"
+              : "bg-navy-950 text-slate-400 hover:text-white"
+          )}
+        >
+          Só nota fiscal pendente
+        </button>
 
         {temFiltroAtivo && (
           <button

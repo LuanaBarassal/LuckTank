@@ -20,6 +20,13 @@ const CSP = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  experimental: {
+    // Default do Next 14 é 1MB por Server Action — pouco pra nota fiscal
+    // anexada pelo escritório (anexarNotaFiscal: foto comprimida no
+    // navegador ou PDF de até 4MB). 5MB fica logo acima do teto real de
+    // corpo de function da Vercel (~4,5MB), que é quem limita de fato.
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   async headers() {
     return [
       {

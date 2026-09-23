@@ -9,6 +9,7 @@ import FiltrosAbastecimento from "@/components/escritorio/filtros-abastecimento"
 import FotoComprovante from "@/components/escritorio/foto-comprovante";
 import LinkExportacaoProtegida from "@/components/escritorio/link-exportacao-protegida";
 import BotaoExcluirAbastecimento from "@/components/escritorio/botao-excluir-abastecimento";
+import BotaoAnexarNotaFiscal from "@/components/escritorio/botao-anexar-nota-fiscal";
 import { Card, CardTitle } from "@/components/ui/card";
 import { formatarMoeda, formatarDataBr, formatarVeiculo } from "@/lib/formatacao";
 import {
@@ -95,7 +96,7 @@ export default async function VeiculoDetalhePage({
     supabase
       .from("abastecimentos")
       .select(
-        "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, motorista_id, motorista_nome_livre"
+        "id, data_abastecimento, km_atual, km_rodado, litros, valor_total, consumo_kml, motorista_id, motorista_nome_livre, tem_nota_fiscal"
       )
       .eq("status", "ativo"),
     filtros,
@@ -146,19 +147,27 @@ export default async function VeiculoDetalhePage({
   const { data: midiasDosAbastecimentos } = idsAbastecimentos.length
     ? await supabase
         .from("midias")
-        .select("id, entidade_id, tipo, criado_em")
+        .select("id, entidade_id, tipo, criado_em, url")
         .eq("entidade_tipo", "abastecimento")
-        .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro"])
+        .in("tipo", ["foto_comprovante", "foto_bomba", "foto_hodometro", "nota_fiscal"])
         .in("entidade_id", idsAbastecimentos)
         .order("criado_em", { ascending: false })
-    : { data: [] as { id: string; entidade_id: string; tipo: string; criado_em: string }[] };
+    : { data: [] as { id: string; entidade_id: string; tipo: string; criado_em: string; url: string }[] };
 
-  const mapaMidiasPorTipo = new Map<string, { cupom?: string; bomba?: string; hodometro?: string }>();
+  const mapaMidiasPorTipo = new Map<
+    string,
+    { cupom?: string; bomba?: string; hodometro?: string; notaFiscal?: { id: string; ehPdf: boolean } }
+  >();
   for (const midia of midiasDosAbastecimentos ?? []) {
     const atual = mapaMidiasPorTipo.get(midia.entidade_id) ?? {};
     if (midia.tipo === "foto_comprovante" && !atual.cupom) atual.cupom = midia.id;
     else if (midia.tipo === "foto_bomba" && !atual.bomba) atual.bomba = midia.id;
     else if (midia.tipo === "foto_hodometro" && !atual.hodometro) atual.hodometro = midia.id;
+    else if (midia.tipo === "nota_fiscal" && !atual.notaFiscal) {
+      // Só o "é PDF?" vai pro client (decide miniatura vs. selo) — a URL do
+      // Storage em si nunca sai do servidor.
+      atual.notaFiscal = { id: midia.id, ehPdf: midia.url.toLowerCase().endsWith(".pdf") };
+    }
     mapaMidiasPorTipo.set(midia.entidade_id, atual);
   }
 
@@ -174,6 +183,7 @@ export default async function VeiculoDetalhePage({
   paramsExport.set("veiculo_id", veiculo.id);
   if (filtros.motoristaId) paramsExport.set("motorista_id", filtros.motoristaId);
   if (filtros.motoristaNomeLivre) paramsExport.set("motorista_nome", filtros.motoristaNomeLivre);
+  if (filtros.notaPendente) paramsExport.set("nota", "pendente");
   const queryExport = paramsExport.toString();
 
   return (
@@ -329,6 +339,17 @@ export default async function VeiculoDetalhePage({
                           ) : (
                             <FotoAusente rotulo="Hodôm." />
                           )}
+                          {midias.notaFiscal ? (
+                            <FotoComprovante
+                              midiaId={midias.notaFiscal.id}
+                              rotulo="NF"
+                              ehPdf={midias.notaFiscal.ehPdf}
+                            />
+                          ) : podeEditar ? (
+                            <BotaoAnexarNotaFiscal abastecimentoId={a.id} />
+                          ) : (
+                            <FotoAusente rotulo="NF" pendente={a.tem_nota_fiscal === false} />
+                          )}
                         </div>
                       </td>
                       <td
@@ -349,6 +370,14 @@ export default async function VeiculoDetalhePage({
                               )}
                             >
                               {nivel === "critico" ? "Crítico" : "Atenção"}
+                            </span>
+                          )}
+                          {a.tem_nota_fiscal === false && (
+                            <span
+                              className="rounded-full border border-atencao-500/40 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-atencao-400"
+                              title="Abastecimento sem nota fiscal eletrônica anexada"
+                            >
+                              NF pendente
                             </span>
                           )}
                         </div>
@@ -515,15 +544,29 @@ function CardComparativoConsumo({ comparativo }: { comparativo: ComparativoConsu
 }
 
 // Mesmo layout (miniatura + rótulo) de FotoComprovante, só que sem foto —
-// mantém as 3 colunas de foto alinhadas entre linhas mesmo quando bomba/
-// hodômetro não foram tiradas (Bloco 1, sempre opcionais).
-function FotoAusente({ rotulo }: { rotulo: string }) {
+// mantém as colunas de foto alinhadas entre linhas mesmo quando bomba/
+// hodômetro/NF não foram tiradas (sempre opcionais). `pendente` realça a NF
+// faltando pra quem não pode anexar (supervisor) — pra gerente/admin o
+// próprio botão de anexar já ocupa esse lugar.
+function FotoAusente({ rotulo, pendente }: { rotulo: string; pendente?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-dashed border-navy-800 text-slate-700">
-        —
+      <div
+        className={cn(
+          "flex h-12 w-12 items-center justify-center rounded-lg border border-dashed",
+          pendente ? "border-atencao-500/60 text-atencao-400" : "border-navy-800 text-slate-700"
+        )}
+      >
+        {pendente ? "!" : "—"}
       </div>
-      <span className="text-[10px] font-medium uppercase tracking-wide text-slate-600">{rotulo}</span>
+      <span
+        className={cn(
+          "text-[10px] font-medium uppercase tracking-wide",
+          pendente ? "text-atencao-400" : "text-slate-600"
+        )}
+      >
+        {rotulo}
+      </span>
     </div>
   );
 }

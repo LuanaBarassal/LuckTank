@@ -481,7 +481,9 @@ export default function FluxoAbastecimento({
       );
     }
     if (fotoNotaFiscalFile) {
-      const fotoComprimida = await comprimirImagem(fotoNotaFiscalFile);
+      // 1600/0.85 (não o padrão 1280/0.75): texto miúdo da DANFE precisa
+      // continuar legível pro escritório — mesmo critério do OCR do cupom.
+      const fotoComprimida = await comprimirImagem(fotoNotaFiscalFile, 1600, 0.85);
       formData.set("foto_nota_fiscal", fotoComprimida, fotoNotaFiscalFile.name);
       formData.set(
         "foto_nota_fiscal_exif",
@@ -520,7 +522,9 @@ export default function FluxoAbastecimento({
         const fotoHodometroExifHeaderBlob = fotoHodometroFile
           ? fotoHodometroFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
           : null;
-        const fotoNotaFiscalBlob = fotoNotaFiscalFile ? await comprimirImagem(fotoNotaFiscalFile) : null;
+        const fotoNotaFiscalBlob = fotoNotaFiscalFile
+          ? await comprimirImagem(fotoNotaFiscalFile, 1600, 0.85)
+          : null;
         const fotoNotaFiscalExifHeaderBlob = fotoNotaFiscalFile
           ? fotoNotaFiscalFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
           : null;
