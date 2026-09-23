@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 3: dados da NF por empresa na etiqueta do QR).
+Última atualização: 2026-09-23 (nota fiscal eletrônica — Bloco 4: botões de envio WhatsApp/e-mail, versão simples).
 
 ## Visão do produto
 
@@ -3478,6 +3478,39 @@ cobre o **Bloco 1**.
   conferido** (sem banco local — mesma pendência dos blocos anteriores).
 - **Pendência**: aplicar **0019 e 0020** antes de subir o código (a etiqueta,
   Configurações e `/r/[qrToken]` selecionam as colunas novas).
+
+### Bloco 4 — Botões de envio da nota, versão simples (2026-09-23)
+
+Decisão do usuário: **manter simples** — nada de envio automático pelo
+servidor (Resend) e nada de link público/assinado da foto por enquanto
+("depois adiciono mais pra frente"). Só atalhos que abrem o app já
+preenchido; a pessoa confirma o envio.
+
+- ✅ **Tela de sucesso do motorista**, só quando ele fotografou a NF
+  (`components/motorista/botoes-envio-nota-fiscal.tsx`):
+  - **Abrir WhatsApp** — `wa.me/55<número da empresa>?text=...` (número do
+    campo por empresa da 0020).
+  - **Abrir e-mail** — `mailto:<e-mail da empresa>?subject=...&body=...`.
+  - **Compartilhar foto da nota** — Web Share API (`navigator.share` com o
+    arquivo): anexa a foto de verdade no app que a pessoa escolher. Motivo:
+    wa.me e mailto: não anexam arquivo, e a foto tirada pela câmera do
+    navegador muitas vezes nem fica salva na galeria. Só aparece se
+    `navigator.canShare({ files })` for verdadeiro.
+  - Texto na UI deixa claro que os botões só abrem o app e que WhatsApp/
+    e-mail levam só o texto. Botão some se a empresa não tiver o número/
+    e-mail configurado.
+- ✅ **Mensagem** (`lib/nota-fiscal/envio.ts`, funções puras testadas):
+  veículo (prefixo · placa), data, valor, litros, motorista e "Foto da nota
+  fiscal em anexo." — omite o que estiver vazio. Assunto do e-mail:
+  "Nota fiscal - abastecimento <veículo> - <data>". Espaço como `%20` no
+  mailto (não `+`, que alguns apps mostram literal).
+- **Fora do escopo desta versão** (possíveis evoluções): envio com anexo
+  via Resend; link da foto na mensagem (exigiria link assinado com
+  validade — a rota `/api/midias` é só pra quem está logado); botões de
+  envio também no escritório (lightbox da NF).
+- **Validado**: `tsc`, `lint`, `test` (212/212, +5), `build` limpos.
+  Links montados conferidos nos testes; abertura real no celular não
+  testada (sem ambiente — mesma pendência dos blocos anteriores).
 
 ## Regras invariantes (não podem quebrar)
 

@@ -9,6 +9,7 @@ import PassoFormulario, {
   type ValoresFormulario,
 } from "@/components/motorista/passo-formulario";
 import PassoSucesso from "@/components/motorista/passo-sucesso";
+import BotoesEnvioNotaFiscal from "@/components/motorista/botoes-envio-nota-fiscal";
 import FilaPendencias from "@/components/motorista/fila-pendencias";
 import type { DadosBomba, DadosHodometro, OcrConfianca, OcrResultado } from "@/lib/ocr/provider";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -735,7 +736,25 @@ export default function FluxoAbastecimento({
           )}
 
           {passo === "sucesso" && (
-            <PassoSucesso offline={salvoOffline} onNovoRegistro={reiniciar} />
+            <PassoSucesso offline={salvoOffline} onNovoRegistro={reiniciar}>
+              {/* Só quando o motorista fotografou a nota — sem foto não há o
+                  que enviar (o escritório anexa depois, ver Bloco 2). */}
+              {fotoNotaFiscalFile && (
+                <BotoesEnvioNotaFiscal
+                  destino={dadosNotaFiscal ?? { cnpj: null, whatsapp: null, email: null }}
+                  foto={fotoNotaFiscalFile}
+                  mensagem={{
+                    veiculo: formatarVeiculo(veiculo.prefixo, veiculo.placa),
+                    dataAbastecimento: valores.dataAbastecimento,
+                    valorTotal: Number(valores.valorTotal) > 0 ? Number(valores.valorTotal) : null,
+                    litros: Number(valores.litros) > 0 ? Number(valores.litros) : null,
+                    motorista: usarNomeLivre
+                      ? nomeLivre.trim() || null
+                      : (motoristas.find((m) => m.id === motoristaId)?.nome ?? null),
+                  }}
+                />
+              )}
+            </PassoSucesso>
           )}
         </Card>
         </div>
