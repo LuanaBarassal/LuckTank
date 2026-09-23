@@ -260,10 +260,24 @@ export async function POST(request: NextRequest) {
   if (!resultadoHodometro.ok) {
     return NextResponse.json({ error: resultadoHodometro.erro }, { status: 400 });
   }
+  // Nota fiscal eletrônica — opcional como bomba/hodômetro: ausente ou
+  // inválida nunca bloqueia, o abastecimento só fica com a nota pendente.
+  const resultadoNotaFiscal = await processarFoto({
+    formData,
+    campoFoto: "foto_nota_fiscal",
+    campoExif: "foto_nota_fiscal_exif",
+    admin,
+    caminhoBase: caminhoBase("nota-fiscal"),
+    obrigatoria: false,
+  });
+  if (!resultadoNotaFiscal.ok) {
+    return NextResponse.json({ error: resultadoNotaFiscal.erro }, { status: 400 });
+  }
 
   const fotoCupom = resultadoCupom.dados;
   const fotoBomba = resultadoBomba.dados;
   const fotoHodometro = resultadoHodometro.dados;
+  const fotoNotaFiscal = resultadoNotaFiscal.dados;
   // As regras de fraude (nota duplicada, foto reaproveitada, EXIF antigo)
   // continuam olhando só pro cupom — é o documento fiscal, o mesmo padrão
   // de sempre; bomba/hodômetro são evidência complementar de conferência
@@ -373,6 +387,16 @@ export async function POST(request: NextRequest) {
       hash_sha256: fotoHodometro.hash,
       exif_timestamp: fotoHodometro.exifTimestamp,
       exif_gps: fotoHodometro.exifGps as Json,
+    },
+    fotoNotaFiscal && {
+      empresa_id: veiculo.empresa_id,
+      entidade_tipo: "abastecimento",
+      entidade_id: abastecimento.id,
+      url: fotoNotaFiscal.url,
+      tipo: "nota_fiscal",
+      hash_sha256: fotoNotaFiscal.hash,
+      exif_timestamp: fotoNotaFiscal.exifTimestamp,
+      exif_gps: fotoNotaFiscal.exifGps as Json,
     },
   ].filter((m): m is NonNullable<typeof m> => Boolean(m));
 

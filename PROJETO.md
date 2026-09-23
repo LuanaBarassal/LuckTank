@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-07-16 (fluxo "esqueci minha senha" self-service + fix de PWA no manifest).
+Última atualização: 2026-09-23 (nota fiscal eletrônica do abastecimento — Bloco 1: captura opcional pelo motorista).
 
 ## Visão do produto
 
@@ -3325,6 +3325,52 @@ curta rejeitada / válida aceita na redefinição (conta descartável),
 reuso de link corretamente barrado depois da correção, login com senha
 antiga falhando e com a nova funcionando. `tsc`, `lint`, `test` (146),
 `build` limpos.
+
+## Nota fiscal eletrônica do abastecimento — Bloco 1: captura pelo motorista (2026-09-23)
+
+Pedido do usuário: guardar a nota fiscal eletrônica (NF-e/DANFE) de cada
+abastecimento — hoje ela é exigida, mas o sistema não tinha onde guardá-la.
+Pedido em 4 blocos (1: motorista fotografa, opcional; 2: estado "nota
+pendente" + escritório anexa depois; 3: dados da NF por empresa na etiqueta
+do QR; 4: botões de envio WhatsApp/e-mail já preenchidos). Este registro
+cobre o **Bloco 1**.
+
+- ✅ **4ª foto no wizard do motorista, opcional.** Sequência agora: nome →
+  bomba (1/4) → cupom com OCR (2/4) → hodômetro (3/4) → **nota fiscal
+  (4/4)** → formulário. Reaproveita `PassoFoto` (câmera + galeria, mesmo
+  padrão das outras 3), sem OCR — os dados do abastecimento já vêm do
+  cupom; a NF é só guardada como documento. Instrução explica o que
+  fotografar e que pular não trava nada.
+- ✅ **Pular é explícito e nunca trava.** `PassoFoto` ganhou `rotuloPular`
+  (a NF usa "Não tenho a nota agora — pular"; as demais mantêm "Pular esta
+  foto") e um selo "Opcional" ao lado de "Foto X de 4" em toda etapa com
+  `obrigatoria={false}` (bomba/hodômetro também ganharam o selo — mesma
+  informação que já era verdade, agora visível).
+- ✅ **Servidor: mesma `processarFoto()` das outras fotos** em
+  `app/api/abastecimentos/route.ts` — campo multipart `foto_nota_fiscal` (+
+  `foto_nota_fiscal_exif`), mesma validação de assinatura/tamanho (8MB),
+  hash, EXIF, upload no bucket `comprovantes` (path
+  `<empresa>/<veiculo>/<registro_uuid>-nota-fiscal.<ext>`), `obrigatoria:
+  false` (ausente/inválida só resulta em "sem nota", nunca 400). Grava em
+  `midias` com **`tipo = 'nota_fiscal'`**. **Nenhuma migration** —
+  `midias.tipo` é texto livre sem CHECK desde a `0001_init.sql` (mesma
+  conclusão do Bloco 1 das 3 fotos).
+- ✅ **Fila offline**: `ItemFila` ganhou `fotoNotaFiscalBlob`/
+  `fotoNotaFiscalExifHeaderBlob`/`fotoNotaFiscalNome`, **opcionais** (itens
+  já enfileirados antes do deploy sincronizam sem a nota — ficam pendentes);
+  `lib/offline/sync.ts` envia os campos novos quando presentes.
+- **Sem efeito colateral no escritório/export ainda**: detalhe do veículo
+  (`onibus/[id]`), export Excel/PDF e ZIP de fotos filtram `midias.tipo`
+  por lista explícita (`foto_comprovante`/`foto_bomba`/`foto_hodometro`) —
+  a NF só passa a aparecer lá no Bloco 2. As regras de fraude (foto
+  duplicada, EXIF antigo) continuam olhando só pro cupom.
+- **Payload**: 4 fotos comprimidas (1280px/0.75, ~150-400KB cada) + 4
+  cabeçalhos EXIF (≤128KB cada) ≈ 1,5-2MB por envio, abaixo do limite de
+  4,5MB de function da Vercel.
+- **Validado**: `tsc`, `lint`, `test` (190/190), `build` limpos.
+  **Ponta a ponta pendente**: `.env.local` local foi sobrescrito pelo
+  Vercel CLI (só tem `VERCEL_OIDC_TOKEN`, sem chaves do Supabase/Gemini),
+  então não deu pra subir o app contra o banco nesta sessão.
 
 ## Regras invariantes (não podem quebrar)
 

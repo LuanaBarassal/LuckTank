@@ -26,6 +26,11 @@ export interface ItemFila {
   fotoHodometroBlob?: Blob | null;
   fotoHodometroNome?: string | null;
   fotoHodometroExifHeaderBlob?: Blob | null;
+  // Nota fiscal eletrônica (opcional) — mesma regra: chave nova e opcional,
+  // itens antigos da fila sincronizam sem ela (nota fica pendente).
+  fotoNotaFiscalBlob?: Blob | null;
+  fotoNotaFiscalNome?: string | null;
+  fotoNotaFiscalExifHeaderBlob?: Blob | null;
   criadoEm: number;
   status: "pendente" | "erro";
   erro: string | null;

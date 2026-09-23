@@ -49,6 +49,7 @@ type Passo =
   | "processando"
   | "foto-bomba"
   | "foto-hodometro"
+  | "foto-nota-fiscal"
   | "formulario"
   | "sucesso";
 
@@ -124,6 +125,8 @@ export default function FluxoAbastecimento({
   const [fotoBombaPreview, setFotoBombaPreview] = useState<string | null>(null);
   const [fotoHodometroFile, setFotoHodometroFile] = useState<File | null>(null);
   const [fotoHodometroPreview, setFotoHodometroPreview] = useState<string | null>(null);
+  const [fotoNotaFiscalFile, setFotoNotaFiscalFile] = useState<File | null>(null);
+  const [fotoNotaFiscalPreview, setFotoNotaFiscalPreview] = useState<string | null>(null);
   const [erroFoto, setErroFoto] = useState<string | null>(null);
   const [tentativasOcr, setTentativasOcr] = useState(0);
   const [ocrMeta, setOcrMeta] = useState<MetaOcr | null>(null);
@@ -155,7 +158,7 @@ export default function FluxoAbastecimento({
     }
   }, [estaOnline]);
 
-  // Compartilhado pelas 3 fotos — só troca qual par (file, preview) é
+  // Compartilhado pelas 4 fotos — só troca qual par (file, preview) é
   // atualizado. `URL.revokeObjectURL` evita vazar memória do preview antigo
   // quando o motorista troca de foto antes de confirmar.
   function trocarFoto(
@@ -182,6 +185,10 @@ export default function FluxoAbastecimento({
     trocarFoto(file, setFotoHodometroFile, setFotoHodometroPreview);
   }
 
+  function handleFotoNotaFiscalChange(file: File | null) {
+    trocarFoto(file, setFotoNotaFiscalFile, setFotoNotaFiscalPreview);
+  }
+
   function handleChangeFormulario<K extends keyof ValoresFormulario>(campo: K, valor: string) {
     setValores((atual) => ({ ...atual, [campo]: valor }));
   }
@@ -194,6 +201,7 @@ export default function FluxoAbastecimento({
     handleFotoChange(null);
     handleFotoBombaChange(null);
     handleFotoHodometroChange(null);
+    handleFotoNotaFiscalChange(null);
     setErroFoto(null);
     setTentativasOcr(0);
     setOcrMeta(null);
@@ -367,12 +375,20 @@ export default function FluxoAbastecimento({
     } else {
       setHodometroOcrResultado(null);
     }
-    setPasso("formulario");
+    setPasso("foto-nota-fiscal");
   }
 
   function handlePularFotoHodometro() {
     handleFotoHodometroChange(null);
     setHodometroOcrResultado(null);
+    setPasso("foto-nota-fiscal");
+  }
+
+  // Nota fiscal eletrônica: só captura e guarda (sem OCR — os dados do
+  // abastecimento já vêm do cupom). Pular nunca trava: o abastecimento fica
+  // com a nota pendente e o escritório pode anexar depois.
+  function handlePularFotoNotaFiscal() {
+    handleFotoNotaFiscalChange(null);
     setPasso("formulario");
   }
 
@@ -464,6 +480,15 @@ export default function FluxoAbastecimento({
         fotoHodometroFile.name
       );
     }
+    if (fotoNotaFiscalFile) {
+      const fotoComprimida = await comprimirImagem(fotoNotaFiscalFile);
+      formData.set("foto_nota_fiscal", fotoComprimida, fotoNotaFiscalFile.name);
+      formData.set(
+        "foto_nota_fiscal_exif",
+        fotoNotaFiscalFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES),
+        fotoNotaFiscalFile.name
+      );
+    }
 
     try {
       const resposta = await fetch("/api/abastecimentos", { method: "POST", body: formData });
@@ -495,6 +520,10 @@ export default function FluxoAbastecimento({
         const fotoHodometroExifHeaderBlob = fotoHodometroFile
           ? fotoHodometroFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
           : null;
+        const fotoNotaFiscalBlob = fotoNotaFiscalFile ? await comprimirImagem(fotoNotaFiscalFile) : null;
+        const fotoNotaFiscalExifHeaderBlob = fotoNotaFiscalFile
+          ? fotoNotaFiscalFile.slice(0, TAMANHO_CABECALHO_EXIF_BYTES)
+          : null;
         await adicionarNaFila({
           registroUuid,
           qrToken,
@@ -508,6 +537,9 @@ export default function FluxoAbastecimento({
           fotoHodometroBlob,
           fotoHodometroExifHeaderBlob,
           fotoHodometroNome: fotoHodometroFile?.name ?? null,
+          fotoNotaFiscalBlob,
+          fotoNotaFiscalExifHeaderBlob,
+          fotoNotaFiscalNome: fotoNotaFiscalFile?.name ?? null,
           criadoEm: Date.now(),
           status: "pendente",
           erro: null,
@@ -581,7 +613,7 @@ export default function FluxoAbastecimento({
               titulo="Foto do comprovante"
               instrucao="Tire uma foto legível do cupom/nota do abastecimento, ou escolha uma da galeria."
               numero={2}
-              total={3}
+              total={4}
               preview={fotoPreview}
               mensagemErro={erroFoto}
               mensagemInfo={
@@ -619,7 +651,7 @@ export default function FluxoAbastecimento({
               titulo="Visor da bomba"
               instrucao="Fotografe o visor da bomba mostrando litros e valor."
               numero={1}
-              total={3}
+              total={4}
               obrigatoria={false}
               preview={fotoBombaPreview}
               onFotoChange={handleFotoBombaChange}
@@ -634,13 +666,29 @@ export default function FluxoAbastecimento({
               titulo="Hodômetro"
               instrucao="Fotografe o painel/hodômetro mostrando o KM atual."
               numero={3}
-              total={3}
+              total={4}
               obrigatoria={false}
               preview={fotoHodometroPreview}
               onFotoChange={handleFotoHodometroChange}
               onVoltar={() => setPasso("foto-cupom")}
               onContinuar={handleContinuarFotoHodometro}
               onPular={handlePularFotoHodometro}
+            />
+          )}
+
+          {passo === "foto-nota-fiscal" && (
+            <PassoFoto
+              titulo="Nota fiscal eletrônica"
+              instrucao="Fotografe a nota fiscal (NF-e/DANFE) que o posto emitiu no CNPJ da empresa. Não pegou a nota agora? Pode pular — o registro segue normal e o escritório anexa depois."
+              numero={4}
+              total={4}
+              obrigatoria={false}
+              rotuloPular="Não tenho a nota agora — pular"
+              preview={fotoNotaFiscalPreview}
+              onFotoChange={handleFotoNotaFiscalChange}
+              onVoltar={() => setPasso("foto-hodometro")}
+              onContinuar={() => setPasso("formulario")}
+              onPular={handlePularFotoNotaFiscal}
             />
           )}
 
@@ -663,7 +711,7 @@ export default function FluxoAbastecimento({
                 erro={erro}
                 aviso={avisoFormulario}
                 enviando={enviando}
-                onVoltar={() => setPasso("foto-hodometro")}
+                onVoltar={() => setPasso("foto-nota-fiscal")}
                 onSubmit={handleSubmit}
               />
             </div>
@@ -681,7 +729,10 @@ export default function FluxoAbastecimento({
 
 const PASSOS_VISIVEIS: { chave: Passo[]; label: string }[] = [
   { chave: ["nome"], label: "Nome" },
-  { chave: ["foto-cupom", "processando", "foto-bomba", "foto-hodometro"], label: "Fotos" },
+  {
+    chave: ["foto-cupom", "processando", "foto-bomba", "foto-hodometro", "foto-nota-fiscal"],
+    label: "Fotos",
+  },
   { chave: ["formulario"], label: "Dados" },
 ];
 

@@ -32,6 +32,16 @@ function construirFormData(item: ItemFila): FormData {
       item.fotoHodometroNome ?? "hodometro.jpg"
     );
   }
+  if (item.fotoNotaFiscalBlob) {
+    formData.set("foto_nota_fiscal", item.fotoNotaFiscalBlob, item.fotoNotaFiscalNome ?? "nota-fiscal.jpg");
+  }
+  if (item.fotoNotaFiscalExifHeaderBlob) {
+    formData.set(
+      "foto_nota_fiscal_exif",
+      item.fotoNotaFiscalExifHeaderBlob,
+      item.fotoNotaFiscalNome ?? "nota-fiscal.jpg"
+    );
+  }
   return formData;
 }
 

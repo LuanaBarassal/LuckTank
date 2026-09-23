@@ -14,6 +14,9 @@ interface Props {
   // diferente de mensagemErro, nunca as duas ao mesmo tempo na prática.
   mensagemInfo?: string | null;
   obrigatoria?: boolean;
+  // Texto do link de pular (só aparece quando obrigatoria=false) — a nota
+  // fiscal usa um texto próprio ("Não tenho a nota agora"), as demais o padrão.
+  rotuloPular?: string;
   onFotoChange: (file: File | null) => void;
   onVoltar: () => void;
   onContinuar: () => void;
@@ -29,6 +32,7 @@ export default function PassoFoto({
   mensagemErro,
   mensagemInfo,
   obrigatoria = true,
+  rotuloPular = "Pular esta foto",
   onFotoChange,
   onVoltar,
   onContinuar,
@@ -47,8 +51,13 @@ export default function PassoFoto({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-400">
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
           Foto {numero} de {total}
+          {!obrigatoria && (
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-500">
+              Opcional
+            </span>
+          )}
         </p>
         <h2 className="text-lg font-semibold text-neutral-900">{titulo}</h2>
       </div>
@@ -143,7 +152,7 @@ export default function PassoFoto({
           onClick={onPular}
           className="text-center text-sm font-medium text-neutral-500 underline underline-offset-2"
         >
-          Pular esta foto
+          {rotuloPular}
         </button>
       )}
     </div>
