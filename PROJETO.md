@@ -4,7 +4,7 @@
 > contexto da conversa, este arquivo é o ponto de partida — atualize-o ao
 > final de cada fase, antes de avançar para a próxima.
 
-Última atualização: 2026-09-23 (auditoria da nota fiscal + correções: PDF como download, NF no export, texto de envio, cabeçalho do motorista).
+Última atualização: 2026-09-23 (etiqueta do QR em 1 folha A4 + PDF gerado no servidor).
 
 ## Visão do produto
 
@@ -3568,6 +3568,48 @@ achados:
   bomba/hodômetro, caminho offline com NF, botão "Compartilhar foto".
   Testes automatizados do trigger/Server Action: opcional, depois.
 - **Validado**: `tsc`, `lint`, `test` (216/216, +4), `build` limpos.
+
+## Etiqueta do QR: 1 folha A4 + PDF gerado no servidor (2026-09-23)
+
+Problemas relatados: a etiqueta (`/onibus/[id]/etiqueta`) transbordava pra
+uma 2ª folha (o bloco "Enviar comprovante para" caía sozinho na página 2) e
+saía com o cabeçalho/rodapé automático do navegador (data, título, URL,
+"1/2"). Resolvido nas duas frentes:
+
+- ✅ **PDF de verdade, gerado no servidor — caminho recomendado.**
+  `GET /api/veiculos/[id]/etiqueta` (sessão + RLS: veículo e dados da NF só
+  da empresa de quem pede; outra empresa = 404) devolve um PDF A4 de 1 página
+  (`lib/etiqueta/pdf.ts`, mesma lib `jspdf` dos exports). O LuckTank controla
+  100% do papel — sem cabeçalho/rodapé do navegador, sem depender de
+  margem/zoom/impressora de cada um. Botão "Baixar etiqueta em PDF
+  (recomendado)" na página da etiqueta.
+  - **QR desenhado em VETOR** (`desenharQrVetorial`: matriz de
+    `QRCode.create`, mesma lib/correção "M"/zona de silêncio do QR de
+    download, trechos contíguos viram 1 retângulo). Primeira versão embutia o
+    PNG e o PDF saía com **3,1MB** (jsPDF grava os pixels crus); em vetor
+    ficou com **~43KB** e nítido em qualquer tamanho.
+  - **QR validado de forma independente**: retângulos extraídos do PDF,
+    rasterizados e decodificados com `jsQR` → exatamente
+    `https://luck-tank.vercel.app/r/<qr_token>` (mesma URL da rota do QR —
+    `qr_token` permanente, invariante #3).
+  - Testes (`lib/etiqueta/pdf.test.ts`): 1 página, MediaBox A4, identificador
+    uma vez só, CNPJ + telefone + e-mail completos, sem imagem embutida,
+    < 150KB; empresa sem dados de NF continua em 1 página, sem o bloco.
+- ✅ **Página de impressão corrigida** (pra quem prefere imprimir direto):
+  - Prefixo aparecia DUAS vezes (legenda embaixo do QR SVG + título grande)
+    — agora usa o QR PNG puro (`?formato=png`, sem legenda) e o
+    identificador aparece uma vez, em destaque, no topo.
+  - Folha fixa `210×297mm` com padding interno de 14mm e
+    `@page { size: A4; margin: 0 }` (só nesta rota): sem área de margem, o
+    Chrome não tem onde injetar cabeçalho/rodapé. Layout
+    `app/(escritorio)/layout.tsx` zera padding/fundo em `print:`.
+  - Layout redistribuído (igual ao PDF): identificador → QR 92mm → "Como
+    abastecer" | "Dados para a nota fiscal" lado a lado (em vez de tudo
+    empilhado, que era o que empurrava a NF pra página 2).
+  - Instrução na tela: se ainda aparecer data/URL nas bordas, desmarcar
+    "Cabeçalhos e rodapés" em "Mais configurações" na janela de impressão.
+- **Texto da etiqueta num lugar só** (`lib/etiqueta/conteudo.ts`:
+  `PASSOS_MOTORISTA` + `AVISO_OFFLINE`), usado pela página e pelo PDF.
 
 ## Regras invariantes (não podem quebrar)
 
